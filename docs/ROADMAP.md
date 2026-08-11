@@ -7,8 +7,9 @@ Este documento describe la secuencia de hitos para el desarrollo de la plataform
 ## Hitos de Desarrollo
 
 ### M0 - Foundation
-- [ ] **M0.1: Fundación del proyecto** `[ACTUAL]`
-- [ ] M0.2: Modelo de datos inicial y migraciones base
+- [x] M0.1: Fundación del proyecto
+- [x] M0.2A: Documentación del modelo de dominio inicial
+- [ ] M0.2B: Implementación de base de datos `[PENDIENTE]`
 - [ ] M0.3: Autenticación y aislamiento multi-tenant
 
 ### M1 - Cost calculation vertical slice

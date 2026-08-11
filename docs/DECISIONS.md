@@ -89,3 +89,47 @@ Este documento registra las decisiones de arquitectura de software fundamentales
 * **Consequences**:
   * *Positivas*: Permite adaptar el sistema a restaurantes, talleres, artesanías o manufactura ligera sin rehacer el núcleo.
   * *Negativas*: Exige un diseño más abstracto e inductivo desde el primer hito.
+
+---
+
+## ADR-009: Unidades universales vs conversiones específicas por item
+
+* **Status**: Aprobado
+* **Context**: En la operación cotidiana aparecen términos de empaque o volumen contextual como "costal", "caja", "barra", "taza", "lata" o "charola". Si se tratan como unidades de medida universales, se distorsiona el modelo físico (ej. un costal de harina pesa 25 kg, pero un costal de azúcar pesa 50 kg).
+* **Decision**: Tratar en la capa global únicamente las unidades físicas universales (ej. `g`, `kg`, `ml`, `L`, `piece`). Los conceptos de presentación, empaque o volumen contextual se modelarán estrictamente como conversiones asociadas a un `Item` específico dentro de un negocio (`item_unit_conversions`).
+* **Consequences**:
+  * *Positivas*: Mantiene limpio y numéricamente riguroso el catálogo global de unidades, permitiendo flexibilidad total para que cada negocio defina sus empaques por item.
+  * *Negativas*: Requiere que las consultas y cálculos de conversión verifiquen si la unidad es universal o una conversión específica del item antes de normalizar a la unidad base.
+
+---
+
+## ADR-010: Unidad base canónica por item
+
+* **Status**: Aprobado
+* **Context**: Los ítems se compran, consumen y venden en diversas presentaciones (costales, gramos, kilogramos, cajas). Para costear e inventariar con precisión sin acumular errores de redondeo, se requiere un estándar único de representación por item.
+* **Decision**: Cada item definido en el sistema tendrá asignada una única unidad base canónica perteneciente a su dimensión física (`base_unit_id`). Todas las operaciones operativas (compras, consumos, producciones, movimientos) normalizarán sus cantidades hacia esta unidad base.
+* **Consequences**:
+  * *Positivas*: Garantiza consistencia absoluta en el cálculo de inventario y costos, simplificando las agregaciones y comparaciones históricas.
+  * *Negativas*: Obliga a realizar conversiones de normalización al ingresar transacciones en unidades de presentación distintas a la unidad base.
+
+---
+
+## ADR-011: Independencia entre el tipo de item (kind) y sus capacidades de negocio
+
+* **Status**: Aprobado
+* **Context**: La clasificación tradicional de un recurso (materia prima, producto intermedio, producto terminado, empaque) a menudo limita artificialmente la operación. Por ejemplo, una mermelada puede elaborarse internamente o comprarse hecha a un tercero; un producto terminado podría consumirse en otra preparación.
+* **Decision**: Separar la clasificación conceptual del item (`kind`) de sus banderas explícitas de capacidad operativa (`purchasable`, `producible`, `sellable`, `track_inventory`).
+* **Consequences**:
+  * *Positivas*: Alta flexibilidad para respaldar escenarios operativos reales e híbridos sin modificar el esquema ni forzar duplicación de items.
+  * *Negativas*: Las validaciones de flujo de trabajo deben basarse en las banderas de capacidad y no únicamente en el `kind` del item.
+
+---
+
+## ADR-012: Desactivación lógica (soft deactivation) para entidades de dominio con referencias históricas
+
+* **Status**: Aprobado
+* **Context**: La eliminación física (destructiva) de items, presentaciones o unidades que fueron utilizados en transacciones o recetas pasadas destruye la integridad referencial histórica y rompe la auditoría.
+* **Decision**: Adoptar la desactivación lógica mediante la bandera `is_active = false` para items y conversiones específicas. Los registros desactivados se ocultan para nuevas operaciones pero permanecen intactos en la base de datos para respaldar la historia.
+* **Consequences**:
+  * *Positivas*: Preservación incondicional del historial operativo y consistencia de costos retroactivos.
+  * *Negativas*: Las consultas de catálogo activo deben filtrar explícitamente `is_active = true`.
