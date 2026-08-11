@@ -10,7 +10,7 @@ Este documento describe la secuencia de hitos para el desarrollo de la plataform
 - [x] M0.1: Fundación del proyecto
 - [x] M0.2A: Documentación del modelo de dominio inicial
 - [x] M0.2B: Implementación de base de datos
-- [ ] M0.3: Autenticación y aislamiento multi-tenant
+- [x] M0.3: Autenticación y aislamiento multi-tenant
 
 ### M1 - Cost calculation vertical slice
 - Hito planificado para el modelado de ítems, recetas y cálculo de costo unitario.
