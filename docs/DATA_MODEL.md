@@ -205,7 +205,11 @@ La unidad de destino (`unit_id`) de la conversión debe pertenecer obligatoriame
 - *Válido:* Harina (base `g`, dimensión `mass`) -> `1 costal = 25 kg` (`kg` pertenece a `mass`).
 - *Inválido:* Harina (base `g`, dimensión `mass`) -> `1 costal = 25 L` (`L` pertenece a `volume`).
 
-Esta regla de compatibilidad dimensional deberá ser garantizada a nivel de base de datos en implementaciones futuras.
+**Invariante de Unicidad de Conversiones Activas por Item:**
+No pueden existir dos conversiones **activas** (`is_active = true`) para el mismo item que compartan el mismo nombre contextual (`name_singular`), comparado de forma case-insensitive.
+- *Válido:* Harina (`1 costal = 25 kg`) y Azúcar (`1 costal = 50 kg`) dentro del mismo negocio.
+- *Válido:* Harina (`1 costal = 25 kg` desactivo `is_active = false`) y nueva Harina (`1 COSTAL = 30 kg` activo `is_active = true`).
+- *Inválido:* Harina (`1 costal = 25 kg` activo) y Harina (`1 COSTAL = 30 kg` activo).
 
 ---
 
