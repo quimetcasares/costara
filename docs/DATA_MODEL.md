@@ -84,10 +84,10 @@ Unidades de medida universales reconocidas por la plataforma Costara.
 **Campos conceptuales:**
 - `id`: UUID (Primary Key).
 - `dimension_id`: UUID (FK a `unit_dimensions`). Dimensión física a la que pertenece.
-- `code`: `text` (unique). Código canónico universal (ej. `g`, `kg`, `ml`, `L`, `piece`, `mm`, `cm`, `m`).
+- `code`: `text` (unique). Código canónico universal en lowercase (ej. `mg`, `g`, `kg`, `ml`, `l`, `piece`, `mm`, `cm`, `m`).
 - `name_singular`: `text`. Nombre en singular (ej. "gramo").
 - `name_plural`: `text`. Nombre en plural (ej. "gramos").
-- `symbol`: `text`. Símbolo impreso/visible (ej. `g`).
+- `symbol`: `text`. Símbolo impreso/visible (ej. `g`, `L`).
 - `factor_to_base`: `numeric` de alta precisión. Factor de conversión hacia la unidad base de la dimensión.
 - `is_base`: `boolean`. Indica si es la unidad base canónica de su dimensión.
 
@@ -99,14 +99,14 @@ Unidades de medida universales reconocidas por la plataforma Costara.
 
 **Otras unidades iniciales universales:**
 - Masa: `mg` (`0.001 g`), `kg` (`1000 g`)
-- Volumen: `L` (`1000 ml`)
+- Volumen: `l` (`1000 ml`, símbolo impreso `L`)
 - Longitud: `cm` (`10 mm`), `m` (`1000 mm`)
 
 **Reglas e Invariantes:**
 - `factor_to_base` debe ser estrictamente mayor a 0.
 - Solo debe existir exactamente una unidad base (`is_base = true`) por dimensión.
 - Las conversiones universales ocurren automáticamente **únicamente dentro de la misma dimensión**.
-- **No existe conversión universal automática entre dimensiones distintas** (ej. `kg` no se convierte a `L` sin una densidad o conversión explícita).
+- **No existe conversión universal automática entre dimensiones distintas** (ej. `kg` no se convierte a `l` sin una densidad o conversión explícita).
 
 ---
 
@@ -121,12 +121,11 @@ Permite interpretar y mapear diversas variantes textuales humanas hacia una unid
 - `created_at`: `timestamptz`.
 
 **Aliases globales iniciales esperados:**
-- `KG` -> `kg`
 - `KGS` -> `kg`
 - `GRS` -> `g`
 - `GRS.` -> `g`
-- `LT` -> `L`
-- `LTS` -> `L`
+- `LT` -> `l`
+- `LTS` -> `l`
 - `PZA` -> `piece`
 - `PZAS` -> `piece`
 
@@ -253,7 +252,7 @@ Los siguientes casos de prueba conceptuales verifican la validez del modelo de d
    Un item "Chocolate" con unidad base `g` (dimensión `mass`) puede definir `1 barra = 10 g`.
 
 8. **Rechazo por Incompatibilidad Dimensional:**
-   Un item "Harina" con unidad base `g` (dimensión `mass`) NO puede definir `1 costal = 25 L`, debido a que `L` pertenece a la dimensión `volume`.
+   Un item "Harina" con unidad base `g` (dimensión `mass`) NO puede definir `1 costal = 25 l`, debido a que `l` pertenece a la dimensión `volume`.
 
 9. **Aislamiento de Datos por Tenant:**
    Los items del negocio A (`business_id = A`) no son accesibles ni visibles para usuarios pertenecientes exclusivamente al negocio B (`business_id = B`).

@@ -96,7 +96,7 @@ Este documento registra las decisiones de arquitectura de software fundamentales
 
 * **Status**: Aprobado
 * **Context**: En la operación cotidiana aparecen términos de empaque o volumen contextual como "costal", "caja", "barra", "taza", "lata" o "charola". Si se tratan como unidades de medida universales, se distorsiona el modelo físico (ej. un costal de harina pesa 25 kg, pero un costal de azúcar pesa 50 kg).
-* **Decision**: Tratar en la capa global únicamente las unidades físicas universales (ej. `g`, `kg`, `ml`, `L`, `piece`). Los conceptos de presentación, empaque o volumen contextual se modelarán estrictamente como conversiones asociadas a un `Item` específico dentro de un negocio (`item_unit_conversions`).
+* **Decision**: Tratar en la capa global únicamente las unidades físicas universales (ej. `g`, `kg`, `ml`, `l`, `piece`). Los conceptos de presentación, empaque o volumen contextual se modelarán estrictamente como conversiones asociadas a un `Item` específico dentro de un negocio (`item_unit_conversions`).
 * **Consequences**:
   * *Positivas*: Mantiene limpio y numéricamente riguroso el catálogo global de unidades, permitiendo flexibilidad total para que cada negocio defina sus empaques por item.
   * *Negativas*: Requiere que las consultas y cálculos de conversión verifiquen si la unidad es universal o una conversión específica del item antes de normalizar a la unidad base.
