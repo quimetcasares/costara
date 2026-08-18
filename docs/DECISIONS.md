@@ -210,3 +210,50 @@ Este documento registra las decisiones de arquitectura de software fundamentales
 * **Consequences**:
   * *Positivas*: Honestidad financiera desde el primer hito, arquitectura modular extensible hacia costos completos (mano de obra, servicios, etc.) en hitos posteriores.
   * *Negativas*: Los usuarios deben comprender que el margen sobre materiales directos no equivale a la utilidad neta final del negocio.
+
+---
+
+## ADR-020: Pure TypeScript calculation engine
+
+* **Status**: Aprobado
+* **Context**: El motor de cálculo de recetas, escalado y resolución de costos directos de materiales debe ser determinista, fácilmente testeable y completamente desacoplado de la capa de interfaz de usuario y de los mecanismos de persistencia.
+* **Decision**: El motor de cálculo reside en `src/domain` como una biblioteca TypeScript pura sin dependencias de React ni del cliente de Supabase. La obtención de datos se abstrae mediante la interfaz `RecipeDataProvider`. El motor exige el parámetro temporal `asOf` explícitamente y nunca consulta silenciosamente la fecha del sistema (`new Date()`).
+* **Consequences**:
+  * *Positivas*: Máximo determinismo, suite de pruebas unitarias rápida y aislada, alta reusabilidad (tanto en navegador como en edge/backend) y clara separación de responsabilidades entre matemática de dominio e infraestructura.
+  * *Negativas*: Requiere implementar adaptadores concretos (`SupabaseRecipeRepository`, `InMemoryRecipeRepository`) para conectar el motor a fuentes de datos.
+
+---
+
+## ADR-021: Exact decimal arithmetic and numeric boundary
+
+* **Status**: Aprobado
+* **Context**: Los números de punto flotante estándar de JavaScript (IEEE-754) introducen imprecisiones inaceptables al operar con proporciones y valores monetarios de alta precisión (`numeric(30,12)`). Además, PostgREST serializa los tipos numéricos como números JSON por defecto, degradando la precisión antes de alcanzar el código de dominio.
+* **Decision**: Todas las cantidades, porcentajes, rendimientos, factores de conversión y costos se procesan mediante un constructor aislado `CostaraDecimal` (basado en `decimal.js`) con precisión de trabajo de 50 dígitos y redondeo determinista `ROUND_HALF_UP`. Los valores de tipo `numeric` de PostgreSQL se transportan desde PostgREST proyectados explícitamente como `text` antes de su ingesta en el dominio, rechazando conversiones intermedias a `Number`. No se aplica ningún redondeo de negocio ni de presentación dentro del motor M1C.
+* **Consequences**:
+  * *Positivas*: Exactitud matemática absoluta en la resolución de fórmulas, costos históricos y escalado, eliminando errores de redondeo acumulativo o degradación binaria.
+  * *Negativas*: Mayor disciplina en las consultas del adaptador (uso obligatorio de casts `::text`) y manipulación mediante la API de `CostaraDecimal`.
+
+---
+
+## ADR-022: Draft preview separated from published historical resolution
+
+* **Status**: Aprobado
+* **Context**: Durante el desarrollo de nuevos productos, el usuario necesita simular y previsualizar costos y escalado de formulaciones en borrador (`draft`) sin que esto altere las fórmulas oficiales vigentes ni cree versiones prematuras en la base de datos. Sin embargo, si un borrador consume un insumo producido intermedio, permitir que resuelva borradores no publicados de recetas hijas generaría ambigüedad recursiva e inestabilidad en el costeo.
+* **Decision**: M1C provee dos entry points diferenciados:
+  1. `calculatePublishedRecipeAsOf`: Resolución histórica oficial de versiones `published` (`active`/`archived`) vigentes en una fecha de corte `asOf`.
+  2. `calculateRecipeDraftPreview`: Previsualización en memoria de una versión `draft` de receta padre.
+  Cuando un borrador padre consume un insumo producido (`costing_source: produced`), la sub-receta del insumo producido se resuelve estrictamente a partir de la versión `published` vigente en `asOf`. Nunca se seleccionan automáticamente borradores de recetas hijas.
+* **Consequences**:
+  * *Positivas*: Permite la experimentación ágil y segura en borradores sin contaminar el historial oficial ni introducir árboles recursivos ambiguos.
+  * *Negativas*: Para probar cambios en sub-recetas producidas de forma oficial, el usuario debe publicar formalmente la versión de la sub-receta antes de costearla en recetas compuestas.
+
+---
+
+## ADR-023: Missing cost is not zero
+
+* **Status**: Aprobado
+* **Context**: Si a un insumo comprado le falta su registro de costo histórico o si una sub-receta intermedia no puede costearse completamente, asumir un costo de $0.00 distorsionaría gravemente la rentabilidad del negocio y presentaría márgenes ficticios.
+* **Decision**: La ausencia de costo nunca equivale a costo cero. El motor preserva siempre la información parcial conocida (`knownBatchMaterialCost`, `knownCostPerOutputUnit` cuando sea derivable), marcando el resultado con `isCostComplete: false`, `status: 'incomplete'`, e informando `issues` estructurados tipados. Al propagarse a recetas padres, los costos parciales continúan identificados como parciales.
+* **Consequences**:
+  * *Positivas*: Honestidad e integridad financiera absoluta: el usuario obtiene subtotales conocidos útiles sin que el sistema disfrace datos incompletos como costos totales reales.
+  * *Negativas*: Las interfaces y capas superiores deben gestionar el estado incompleto y comunicar con claridad los costos faltantes.
