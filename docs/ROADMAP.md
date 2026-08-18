@@ -13,7 +13,10 @@ Este documento describe la secuencia de hitos para el desarrollo de la plataform
 - [x] M0.3: Autenticación y aislamiento multi-tenant
 
 ### M1 - Cost calculation vertical slice
-- Hito planificado para el modelado de ítems, recetas y cálculo de costo unitario.
+- [x] M1A: Documentación de recetas y costos directos -> [COMPLETADO]
+- [ ] M1B: Implementación del schema de recetas/costos -> [SIGUIENTE]
+- [ ] M1C: Motor de cálculo y escalado -> [PENDIENTE]
+- [ ] M1D: Vertical slice UI -> [PENDIENTE]
 
 ### M2 - Production and inventory
 - Hito planificado para el registro de producciones, consumos y movimientos de inventario.
