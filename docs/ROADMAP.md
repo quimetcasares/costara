@@ -14,8 +14,8 @@ Este documento describe la secuencia de hitos para el desarrollo de la plataform
 
 ### M1 - Cost calculation vertical slice
 - [x] M1A: Documentación de recetas y costos directos -> [COMPLETADO]
-- [ ] M1B: Implementación del schema de recetas/costos -> [SIGUIENTE]
-- [ ] M1C: Motor de cálculo y escalado -> [PENDIENTE]
+- [x] M1B: Implementación del schema de recetas/costos -> [COMPLETADO]
+- [ ] M1C: Motor de cálculo y escalado -> [SIGUIENTE]
 - [ ] M1D: Vertical slice UI -> [PENDIENTE]
 
 ### M2 - Production and inventory
