@@ -14,13 +14,12 @@ describe('Supabase Recipe Repository Integration', () => {
   const bizAId = 'a0000000-0000-0000-0000-0000000000ff';
   const bizBId = 'b0000000-0000-0000-0000-0000000000fe';
 
-  const itemFlourAId = 'a0000000-0000-0000-0000-0000000000f1';
-  const itemFlourBId = 'b0000000-0000-0000-0000-0000000000f3';
+  const itemFlourBId = 'b0000000-0000-0000-0000-0000000000f3'; // Harina B on Biz B
 
-  const e2eRecipeId = 'a0000000-0000-0000-0000-000000000099';
-  const e2eVersionId = 'a0000000-0000-0000-0000-000000000098';
-  const e2eOutputItemId = 'a0000000-0000-0000-0000-000000000097';
-  const e2eInputId = 'a0000000-0000-0000-0000-000000000096';
+  const e2eRecipeId = 'b0000000-0000-0000-0000-000000000099';
+  const e2eVersionId = 'b0000000-0000-0000-0000-000000000098';
+  const e2eOutputItemId = 'b0000000-0000-0000-0000-000000000097';
+  const e2eInputId = 'b0000000-0000-0000-0000-000000000096';
 
   let unitGId: string;
   let unitKgId: string;
@@ -31,12 +30,11 @@ describe('Supabase Recipe Repository Integration', () => {
     unitGId = units?.find((u) => u.code === 'g')?.id ?? '';
     unitKgId = units?.find((u) => u.code === 'kg')?.id ?? '';
 
-    // 2. Setup E2E test data for Biz A in database
-    // Create output item
+    // 2. Setup E2E test data strictly under Biz B (isolating Panara Biz A from test mutations)
     await client.from('items').upsert({
       id: e2eOutputItemId,
-      business_id: bizAId,
-      name: 'Pan Rustico E2E',
+      business_id: bizBId,
+      name: 'Pan Rustico E2E Biz B',
       kind: 'finished_product',
       base_unit_id: unitGId,
       purchasable: false,
@@ -46,16 +44,14 @@ describe('Supabase Recipe Repository Integration', () => {
       is_active: true,
     });
 
-    // Create recipe
     await client.from('recipes').upsert({
       id: e2eRecipeId,
-      business_id: bizAId,
-      name: 'Receta Pan Rustico E2E',
+      business_id: bizBId,
+      name: 'Receta Pan Rustico E2E Biz B',
       output_item_id: e2eOutputItemId,
       is_active: true,
     });
 
-    // Check if recipe version already exists to remain cleanly idempotent across runs
     const { data: existingVer } = await client
       .from('recipe_versions')
       .select('id, status')
@@ -65,7 +61,7 @@ describe('Supabase Recipe Repository Integration', () => {
     if (!existingVer) {
       await client.from('recipe_versions').insert({
         id: e2eVersionId,
-        business_id: bizAId,
+        business_id: bizBId,
         recipe_id: e2eRecipeId,
         version_number: 1,
         status: 'draft',
@@ -76,9 +72,9 @@ describe('Supabase Recipe Repository Integration', () => {
 
       await client.from('recipe_inputs').insert({
         id: e2eInputId,
-        business_id: bizAId,
+        business_id: bizBId,
         recipe_version_id: e2eVersionId,
-        item_id: itemFlourAId,
+        item_id: itemFlourBId,
         position: 0,
         quantity_mode: 'absolute',
         quantity: '10.000000000000',
@@ -95,16 +91,16 @@ describe('Supabase Recipe Repository Integration', () => {
         .eq('id', e2eVersionId);
     }
 
-    // Create historical cost for Harina Panara ($20 / 1 kg as of 2026-01-01)
+    // Create historical cost for Harina B on Biz B ($20 / 1 kg as of 2026-01-01)
     await client.from('item_cost_versions').upsert({
-      id: 'a0000000-0000-0000-0000-000000000095',
-      business_id: bizAId,
-      item_id: itemFlourAId,
+      id: 'b0000000-0000-0000-0000-000000000095',
+      business_id: bizBId,
+      item_id: itemFlourBId,
       cost_amount: '20.000000000000',
       cost_quantity: '1.000000000000',
       unit_id: unitKgId,
       effective_from: '2026-01-01T00:00:00Z',
-      notes: 'E2E Seed Cost',
+      notes: 'E2E Seed Cost Biz B',
     });
   });
 
@@ -123,43 +119,43 @@ describe('Supabase Recipe Repository Integration', () => {
   });
 
   it('B. historical recipe lookup: asOf selects the correct published recipe version', async () => {
-    const providerA = createSupabaseRecipeDataProvider({ businessId: bizAId, client });
+    const providerB = createSupabaseRecipeDataProvider({ businessId: bizBId, client });
 
     // Query published version as of 2026-03-15 for e2eRecipeId
-    const versionMarch = await providerA.getPublishedRecipeVersionAsOf(
+    const versionMarch = await providerB.getPublishedRecipeVersionAsOf(
       e2eRecipeId,
       new Date('2026-03-15T00:00:00Z')
     );
     expect(versionMarch).not.toBeNull();
     expect(versionMarch?.id).toBe(e2eVersionId);
-    expect(versionMarch?.businessId).toBe(bizAId);
+    expect(versionMarch?.businessId).toBe(bizBId);
   });
 
   it('C. historical cost lookup: asOf selects the correct item_cost_version', async () => {
-    const providerA = createSupabaseRecipeDataProvider({ businessId: bizAId, client });
+    const providerB = createSupabaseRecipeDataProvider({ businessId: bizBId, client });
 
-    const costRes = await providerA.getItemCostResolution(
-      itemFlourAId,
+    const costRes = await providerB.getItemCostResolution(
+      itemFlourBId,
       new Date('2026-03-15T00:00:00Z')
     );
 
     expect(costRes).toBeDefined();
     expect(costRes.hasAnyCostEver).toBe(true);
     expect(costRes.applicableCost).not.toBeNull();
-    expect(costRes.applicableCost?.businessId).toBe(bizAId);
+    expect(costRes.applicableCost?.businessId).toBe(bizBId);
     expect(costRes.applicableCost?.costAmount.toString()).toBe('20');
   });
 
   it('D. numeric precision regression test: numeric(30,12) with >15 digits preserves exact string representation in CostaraDecimal', async () => {
     const highPrecisionCost = '999999999999999999.123456789012';
     const smallPrecisionQty = '0.000000000001';
-    const testCostId = 'a0000000-0000-0000-0000-000000000094';
+    const testCostId = 'b0000000-0000-0000-0000-000000000094';
 
-    // Insert high precision cost in DB
+    // Insert high precision cost in DB on Biz B
     await client.from('item_cost_versions').upsert({
       id: testCostId,
-      business_id: bizAId,
-      item_id: itemFlourAId,
+      business_id: bizBId,
+      item_id: itemFlourBId,
       cost_amount: highPrecisionCost,
       cost_quantity: smallPrecisionQty,
       unit_id: unitKgId,
@@ -167,9 +163,9 @@ describe('Supabase Recipe Repository Integration', () => {
       notes: 'Precision Regression Test',
     });
 
-    const providerA = createSupabaseRecipeDataProvider({ businessId: bizAId, client });
-    const costRes = await providerA.getItemCostResolution(
-      itemFlourAId,
+    const providerB = createSupabaseRecipeDataProvider({ businessId: bizBId, client });
+    const costRes = await providerB.getItemCostResolution(
+      itemFlourBId,
       new Date('2099-01-02T00:00:00Z')
     );
 
@@ -181,11 +177,11 @@ describe('Supabase Recipe Repository Integration', () => {
   });
 
   it('E. full chain integration: real DB data -> SupabaseRecipeDataProvider -> calculatePublishedRecipeAsOf -> RecipeCalculationResult', async () => {
-    const providerA = createSupabaseRecipeDataProvider({ businessId: bizAId, client });
+    const providerB = createSupabaseRecipeDataProvider({ businessId: bizBId, client });
     const asOf = new Date('2026-03-15T00:00:00Z');
 
     const result = await calculatePublishedRecipeAsOf({
-      dataProvider: providerA,
+      dataProvider: providerB,
       asOf,
       recipeId: e2eRecipeId,
     });
@@ -193,7 +189,7 @@ describe('Supabase Recipe Repository Integration', () => {
     expect(result.status).toBe('complete');
     expect(result.recipeId).toBe(e2eRecipeId);
     expect(result.recipeVersionId).toBe(e2eVersionId);
-    expect(result.businessId).toBe(bizAId);
+    expect(result.businessId).toBe(bizBId);
     expect(result.currencyCode).toBe('MXN');
     expect(result.isCostComplete).toBe(true);
 

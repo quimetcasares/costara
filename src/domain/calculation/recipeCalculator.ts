@@ -16,6 +16,7 @@ import type {
   UnitData,
   RecipeInputData,
   PercentageBaseData,
+  RecipeVersionData,
 } from './types.js';
 import type { RecipeDataProvider } from '../data/types.js';
 
@@ -178,7 +179,7 @@ export async function calculateRecipeDraftPreview(params: {
     }
   }
 
-  // Convert draft inputs to domain RecipeInputData format
+  // Convert draft inputs to domain RecipeInputData format with CostaraDecimal instances
   const domainInputs: RecipeInputData[] = inputs.map((inp) => ({
     id: inp.id,
     businessId: dataProvider.businessId,
@@ -186,9 +187,19 @@ export async function calculateRecipeDraftPreview(params: {
     itemId: inp.itemId,
     position: inp.position,
     quantityMode: inp.quantityMode,
-    quantity: inp.quantity ?? null,
+    quantity:
+      inp.quantity instanceof CostaraDecimal
+        ? inp.quantity
+        : inp.quantity !== null && inp.quantity !== undefined && String(inp.quantity).trim() !== ''
+        ? new CostaraDecimal(String(inp.quantity))
+        : null,
     unitId: inp.unitId ?? null,
-    percentage: inp.percentage ?? null,
+    percentage:
+      inp.percentage instanceof CostaraDecimal
+        ? inp.percentage
+        : inp.percentage !== null && inp.percentage !== undefined && String(inp.percentage).trim() !== ''
+        ? new CostaraDecimal(String(inp.percentage))
+        : null,
     costingSource: inp.costingSource ?? null,
     notes: inp.notes ?? null,
   }));
@@ -197,6 +208,30 @@ export async function calculateRecipeDraftPreview(params: {
     percentageInputId: pb.percentageInputId,
     basisInputId: pb.basisInputId,
   }));
+
+  const domainDraftVersion: RecipeVersionData = {
+    id: draftVersion.id ?? 'draft-version',
+    businessId: draftVersion.businessId ?? dataProvider.businessId,
+    recipeId: draftVersion.recipeId ?? 'draft-recipe',
+    versionNumber: draftVersion.versionNumber ?? 1,
+    status: 'draft',
+    referenceYieldQuantity:
+      draftVersion.referenceYieldQuantity instanceof CostaraDecimal
+        ? draftVersion.referenceYieldQuantity
+        : new CostaraDecimal(String(draftVersion.referenceYieldQuantity)),
+    referenceYieldUnitId: draftVersion.referenceYieldUnitId,
+    portionQuantity:
+      draftVersion.portionQuantity instanceof CostaraDecimal
+        ? draftVersion.portionQuantity
+        : draftVersion.portionQuantity !== null && draftVersion.portionQuantity !== undefined && String(draftVersion.portionQuantity).trim() !== ''
+        ? new CostaraDecimal(String(draftVersion.portionQuantity))
+        : null,
+    portionUnitId: draftVersion.portionUnitId ?? null,
+    yieldDescription: draftVersion.yieldDescription ?? null,
+    notes: draftVersion.notes ?? null,
+    effectiveFrom: null,
+    changeReason: null,
+  };
 
   return executeCalculationPipeline({
     recipeId: draftVersion.recipeId,
@@ -214,7 +249,7 @@ export async function calculateRecipeDraftPreview(params: {
       trackInventory: true,
       isActive: true,
     },
-    recipeVersion: draftVersion,
+    recipeVersion: domainDraftVersion,
     inputs: domainInputs,
     percentageBases: domainBases,
     scaleTarget,

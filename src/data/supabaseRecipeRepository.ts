@@ -91,6 +91,39 @@ export class SupabaseRecipeRepository implements RecipeDataProvider {
     };
   }
 
+  async getActiveRecipeVersion(recipeId: string): Promise<RecipeVersionData | null> {
+    const { data, error } = await this.client
+      .from('recipe_versions')
+      .select(
+        'id, business_id, recipe_id, version_number, status, reference_yield_quantity::text, reference_yield_unit_id, portion_quantity::text, portion_unit_id, yield_description, change_reason, notes, effective_from'
+      )
+      .eq('business_id', this.businessId)
+      .eq('recipe_id', recipeId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      businessId: data.business_id,
+      recipeId: data.recipe_id,
+      versionNumber: data.version_number,
+      status: data.status as RecipeVersionStatus,
+      referenceYieldQuantity: fromDatabaseNumericRequired(
+        data.reference_yield_quantity as string,
+        'reference_yield_quantity'
+      ),
+      referenceYieldUnitId: data.reference_yield_unit_id,
+      portionQuantity: fromDatabaseNumeric(data.portion_quantity as string | null),
+      portionUnitId: data.portion_unit_id,
+      yieldDescription: data.yield_description,
+      changeReason: data.change_reason,
+      notes: data.notes,
+      effectiveFrom: data.effective_from ? new Date(data.effective_from) : null,
+    };
+  }
+
   async getPublishedRecipeVersionAsOf(recipeId: string, asOf: Date): Promise<RecipeVersionData | null> {
     const asOfIso = asOf.toISOString();
     const { data, error } = await this.client

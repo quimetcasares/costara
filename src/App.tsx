@@ -1,236 +1,199 @@
-import React, { useEffect, useState } from 'react'
-import { useAuth } from './context/useAuth'
-import { supabase } from './lib/supabaseClient'
-
-interface Item {
-  id: string
-  business_id: string
-  name: string
-  kind: string
-  purchasable: boolean
-  producible: boolean
-  sellable: boolean
-}
+import { useState } from 'react';
+import { useAuth } from './context/useAuth.js';
+import { supabase } from './lib/supabaseClient.js';
+import { Header } from './ui/components/common/Header.js';
+import { useNavigation } from './ui/hooks/useNavigation.js';
+import { RecipeListView } from './ui/views/RecipeListView.js';
+import { RecipeDetailView } from './ui/views/RecipeDetailView.js';
+import { RecipeDraftEditorView } from './ui/views/RecipeDraftEditorView.js';
+import { RecipeHistoryView } from './ui/views/RecipeHistoryView.js';
 
 export default function App() {
-  const {
-    user,
-    businesses,
-    selectedBusiness,
-    setSelectedBusiness,
-    loading,
-    error: authError,
-    signIn,
-    signOut,
-  } = useAuth()
+  const { user, selectedBusiness, selectedRole, loading, error: authError, signIn } = useAuth();
+  const { route, toList, toDetail, toDraft, toHistory } = useNavigation();
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [localError, setLocalError] = useState<string | null>(null)
-
-  const [items, setItems] = useState<Item[]>([])
-  const [fetchingItems, setFetchingItems] = useState(false)
-
-  // Fetch items visible to the authenticated user via RLS
-  useEffect(() => {
-    if (!user) {
-      setItems([])
-      return
-    }
-
-    let isSubscribed = true
-    setFetchingItems(true)
-
-    supabase
-      .from('items')
-      .select('*')
-      .then(({ data, error }) => {
-        if (!isSubscribed) return
-        if (error) {
-          console.error('Error fetching items:', error)
-          setItems([])
-        } else {
-          setItems(data || [])
-        }
-        setFetchingItems(false)
-      })
-
-    return () => {
-      isSubscribed = false
-    }
-  }, [user, selectedBusiness])
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLocalError(null)
-    setSubmitting(true)
+    e.preventDefault();
+    setLocalError(null);
+    setSubmitting(true);
     try {
-      await signIn(email, password)
+      await signIn(email, password);
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setLocalError(err.message)
+        setLocalError(err.message);
       } else {
-        setLocalError('Authentication failed')
+        setLocalError('Authentication failed');
       }
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
-  }
+  };
+
+  const fillCredentials = (userEmail: string) => {
+    setEmail(userEmail);
+    setPassword('password123');
+  };
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6 font-sans">
-        <div className="text-slate-400 font-medium animate-pulse">Loading Costara session...</div>
+      <main className="min-h-screen bg-stone-900 text-stone-100 flex items-center justify-center p-6 font-sans">
+        <div className="text-stone-400 font-medium animate-pulse text-sm">
+          Cargando sesión de Costara...
+        </div>
       </main>
-    )
+    );
   }
 
-  if (!user) {
+  if (!user || !selectedBusiness) {
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 font-sans">
-        <div className="max-w-md w-full space-y-6 rounded-xl bg-slate-900/80 p-8 border border-slate-800 shadow-2xl backdrop-blur-sm">
+      <main className="min-h-screen bg-stone-900 text-stone-100 flex flex-col items-center justify-center p-6 font-sans">
+        <div className="max-w-md w-full space-y-6 rounded-2xl bg-stone-850 p-8 border border-stone-800 shadow-2xl">
           <div className="text-center space-y-2">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono text-xl font-bold">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-amber-600 text-white font-bold text-2xl shadow-md">
               C
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Costara M0.3</h1>
-            <p className="text-xs text-slate-400">Multi-tenant Authentication Demo</p>
+            <h1 className="text-2xl font-black tracking-tight text-white">Costara</h1>
+            <p className="text-xs text-stone-400">Vertical Slice M1D: Recetas, Costeo y Versionado</p>
           </div>
 
           {(localError || authError) && (
-            <div className="p-3 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <div className="p-3 text-xs text-red-400 bg-red-950/50 border border-red-800/60 rounded-lg">
               {localError || authError}
             </div>
           )}
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Email address</label>
+              <label className="block text-xs font-medium text-stone-300 mb-1">Correo electrónico</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="a@costara.local"
-                className="w-full px-3 py-2 text-sm bg-slate-950 border border-slate-800 rounded-lg focus:outline-none focus:border-indigo-500 text-slate-100 placeholder-slate-600"
+                className="w-full px-3 py-2 text-sm bg-stone-950 border border-stone-800 rounded-lg focus:outline-hidden focus:border-amber-500 text-stone-100 placeholder-stone-600"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Password</label>
+              <label className="block text-xs font-medium text-stone-300 mb-1">Contraseña</label>
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-3 py-2 text-sm bg-slate-950 border border-slate-800 rounded-lg focus:outline-none focus:border-indigo-500 text-slate-100 placeholder-slate-600"
+                className="w-full px-3 py-2 text-sm bg-stone-950 border border-stone-800 rounded-lg focus:outline-hidden focus:border-amber-500 text-stone-100 placeholder-stone-600"
               />
             </div>
 
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-lg shadow transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs rounded-lg shadow-md transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              {submitting ? 'Signing in...' : 'Sign in'}
+              {submitting ? 'Iniciando sesión...' : 'Iniciar sesión'}
             </button>
           </form>
+
+          {/* Quick Demo Login Preset Buttons */}
+          <div className="pt-4 border-t border-stone-800 space-y-2">
+            <span className="block text-[11px] text-stone-500 text-center font-medium">
+              Usuarios de prueba rápida:
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => fillCredentials('a@costara.local')}
+                className="py-1.5 px-2 bg-stone-800/80 hover:bg-stone-800 border border-stone-700 rounded-lg text-[11px] font-medium text-stone-300 transition-colors text-center cursor-pointer"
+              >
+                Owner (Panadería)
+              </button>
+              <button
+                type="button"
+                onClick={() => fillCredentials('member@costara.local')}
+                className="py-1.5 px-2 bg-stone-800/80 hover:bg-stone-800 border border-stone-700 rounded-lg text-[11px] font-medium text-stone-300 transition-colors text-center cursor-pointer"
+              >
+                Member (Lectura)
+              </button>
+            </div>
+          </div>
         </div>
       </main>
-    )
+    );
   }
 
+  const businessId = selectedBusiness.id;
+  const userRole = selectedRole || 'member';
+  const businessTimezone = selectedBusiness.timezone || 'America/Mexico_City';
+
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 font-sans flex flex-col items-center">
-      <div className="max-w-2xl w-full space-y-6">
-        {/* Header */}
-        <header className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-mono text-sm font-bold">
-              C
-            </div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Costara</h1>
-          </div>
-          <button
-            onClick={() => signOut()}
-            className="px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-md transition"
-          >
-            Sign out
-          </button>
-        </header>
+    <div className="min-h-screen bg-stone-100 text-stone-900 flex flex-col font-sans">
+      <Header onHomeClick={toList} />
 
-        {/* User & Business Context */}
-        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold block mb-1">
-                Signed in as
-              </span>
-              <span className="font-mono text-slate-100">{user.email}</span>
-            </div>
-            <div>
-              <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold block mb-1">
-                Active Business
-              </span>
-              {businesses.length > 1 ? (
-                <select
-                  value={selectedBusiness?.id || ''}
-                  onChange={(e) => {
-                    const found = businesses.find((b) => b.id === e.target.value)
-                    if (found) setSelectedBusiness(found)
-                  }}
-                  className="w-full font-semibold text-emerald-400 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
-                >
-                  {businesses.map((b) => (
-                    <option key={b.id} value={b.id} className="bg-slate-900 text-slate-100">
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="font-semibold text-emerald-400">
-                  {selectedBusiness ? selectedBusiness.name : 'No business assigned'}
-                </span>
-              )}
-              {selectedBusiness && (
-                <span className="block font-mono text-[10px] text-slate-500 truncate mt-1">
-                  ID: {selectedBusiness.id}
-                </span>
-              )}
-            </div>
-          </div>
-        </section>
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {route.name === 'recipe-list' && (
+          <RecipeListView
+            supabase={supabase}
+            businessId={businessId}
+            onSelectRecipe={(id) => toDetail(id)}
+          />
+        )}
 
-        {/* RLS Items View */}
-        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm uppercase tracking-wider text-slate-300 font-semibold">
-              Items visible to this user
-            </h2>
-            {fetchingItems && <span className="text-xs text-slate-500 animate-pulse">Querying RLS...</span>}
-          </div>
+        {route.name === 'recipe-detail' && (
+          <RecipeDetailView
+            supabase={supabase}
+            businessId={businessId}
+            recipeId={route.recipeId}
+            userRole={userRole}
+            businessTimezone={businessTimezone}
+            onBack={toList}
+            onGoToDraft={() => toDraft(route.recipeId)}
+            onGoToHistory={() => toHistory(route.recipeId)}
+          />
+        )}
 
-          {items.length === 0 ? (
-            <p className="text-xs text-slate-500 italic">No items visible for this user/business.</p>
-          ) : (
-            <ul className="divide-y divide-slate-800/60 border border-slate-800 rounded-lg overflow-hidden bg-slate-950/40">
-              {items.map((item) => (
-                <li key={item.id} className="p-3.5 flex items-center justify-between hover:bg-slate-900/40">
-                  <div>
-                    <span className="font-medium text-slate-200 text-sm block">{item.name}</span>
-                    <span className="text-[10px] text-slate-500 font-mono">ID: {item.id}</span>
-                  </div>
-                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
-                    {item.kind}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-    </main>
-  )
+        {route.name === 'recipe-draft' && (
+          <RecipeDraftEditorView
+            supabase={supabase}
+            businessId={businessId}
+            recipeId={route.recipeId}
+            businessTimezone={businessTimezone}
+            onBack={() => toDetail(route.recipeId)}
+            onPublished={() => toDetail(route.recipeId)}
+          />
+        )}
+
+        {route.name === 'recipe-history' && (
+          <RecipeHistoryView
+            supabase={supabase}
+            businessId={businessId}
+            recipeId={route.recipeId}
+            onBack={() => toDetail(route.recipeId)}
+          />
+        )}
+
+        {route.name === 'not-found' && (
+          <div className="bg-white rounded-xl border border-stone-200 p-12 text-center space-y-4">
+            <h3 className="text-lg font-bold text-stone-900">Página no encontrada</h3>
+            <p className="text-xs text-stone-500">
+              La dirección solicitada no existe o no es válida.
+            </p>
+            <button
+              type="button"
+              onClick={toList}
+              className="text-xs font-semibold px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors cursor-pointer"
+            >
+              Volver al catálogo de recetas
+            </button>
+          </div>
+        )}
+      </main>
+    </div>
+  );
 }

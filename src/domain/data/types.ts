@@ -28,6 +28,8 @@ export interface RecipeDataProvider {
 
   getRecipeByOutputItemId(outputItemId: string): Promise<RecipeData | null>;
 
+  getActiveRecipeVersion(recipeId: string): Promise<RecipeVersionData | null>;
+
   getPublishedRecipeVersionAsOf(recipeId: string, asOf: Date): Promise<RecipeVersionData | null>;
 
   getRecipeInputs(recipeVersionId: string): Promise<readonly RecipeInputData[]>;

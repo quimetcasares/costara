@@ -56,6 +56,15 @@ export class InMemoryRecipeRepository implements RecipeDataProvider {
     );
   }
 
+  async getActiveRecipeVersion(recipeId: string): Promise<RecipeVersionData | null> {
+    const list = this.fixtures.recipeVersions ?? [];
+    return (
+      list.find(
+        (rv) => rv.recipeId === recipeId && rv.businessId === this.businessId && rv.status === 'active'
+      ) ?? null
+    );
+  }
+
   async getPublishedRecipeVersionAsOf(recipeId: string, asOf: Date): Promise<RecipeVersionData | null> {
     const list = this.fixtures.recipeVersions ?? [];
     const candidates = list.filter(
