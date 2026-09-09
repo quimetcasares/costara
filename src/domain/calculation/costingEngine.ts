@@ -1,5 +1,5 @@
-import { CostaraDecimal, DECIMAL_ZERO } from './decimal.js';
-import { toUniversalDimensionBase } from './units.js';
+import { CostaraDecimal, DECIMAL_ZERO } from './decimal.ts';
+import { toUniversalDimensionBase } from './units.ts';
 import {
   missingPurchaseCostIssue,
   noCostAsOfDateIssue,
@@ -8,13 +8,13 @@ import {
   ambiguousCostingSourceIssue,
   recipeCycleIssue,
   unresolvableOutputQuantityIssue,
-} from './issues.js';
-import { resolveRecipeFormula } from './formulaResolver.js';
-import { resolveYieldAndOutput } from './yieldResolver.js';
+} from './issues.ts';
+import { resolveRecipeFormula } from './formulaResolver.ts';
+import { resolveYieldAndOutput } from './yieldResolver.ts';
 import {
   allocateProducedItemCost,
   type ProducedItemTemplate,
-} from './memoization.js';
+} from './memoization.ts';
 import type {
   CostBreakdownNode,
   CalculationIssue,
@@ -23,8 +23,8 @@ import type {
   UnitData,
   CostingSource,
   ResolvedRecipeInput,
-} from './types.js';
-import type { RecipeDataProvider } from '../data/types.js';
+} from './types.ts';
+import type { RecipeDataProvider } from '../data/types.ts';
 
 export interface CostingResolutionResult {
   readonly knownBatchMaterialCost: CostaraDecimal;

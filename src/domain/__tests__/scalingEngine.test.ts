@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { CostaraDecimal } from '../calculation/decimal.js';
-import { applyRecipeScaling } from '../calculation/scalingEngine.js';
+import { CostaraDecimal } from '../calculation/decimal.ts';
+import { applyRecipeScaling } from '../calculation/scalingEngine.ts';
 import type {
   CanonicalYield,
   ResolvedRecipeInput,
   UnitData,
   ItemData,
-} from '../calculation/types.js';
+} from '../calculation/types.ts';
 
 describe('Recipe Scaling Engine', () => {
   const unitG: UnitData = {

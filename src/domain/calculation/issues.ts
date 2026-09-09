@@ -1,4 +1,4 @@
-import type { CalculationIssue, CalculationIssueCode } from './types.js';
+import type { CalculationIssue, CalculationIssueCode } from './types.ts';
 
 export function createIssue(
   code: CalculationIssueCode,

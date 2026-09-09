@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { CostaraDecimal, fromDatabaseNumeric, fromDatabaseNumericRequired } from '../calculation/decimal.js';
+import { CostaraDecimal, fromDatabaseNumeric, fromDatabaseNumericRequired } from '../calculation/decimal.ts';
 import {
   toUniversalDimensionBase,
   fromUniversalDimensionBase,
   areUnitsDimensionallyCompatible,
   findUniversalBaseUnit,
   createCanonicalQuantity,
-} from '../calculation/units.js';
-import type { UnitData } from '../calculation/types.js';
+} from '../calculation/units.ts';
+import type { UnitData } from '../calculation/types.ts';
 
 describe('Units and Dimension Normalization', () => {
   const unitG: UnitData = {

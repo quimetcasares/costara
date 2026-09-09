@@ -1,6 +1,6 @@
-import { CostaraDecimal } from './decimal.js';
-import { toUniversalDimensionBase, findUniversalBaseUnit } from './units.js';
-import { unresolvableOutputQuantityIssue } from './issues.js';
+import { CostaraDecimal } from './decimal.ts';
+import { toUniversalDimensionBase, findUniversalBaseUnit } from './units.ts';
+import { unresolvableOutputQuantityIssue } from './issues.ts';
 import type {
   RecipeVersionData,
   RecipeVersionDraftInput,
@@ -8,7 +8,7 @@ import type {
   UnitData,
   CanonicalYield,
   CalculationIssue,
-} from './types.js';
+} from './types.ts';
 
 export interface YieldResolutionResult {
   readonly referenceYield: CanonicalYield;

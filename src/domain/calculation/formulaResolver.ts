@@ -1,16 +1,16 @@
-import { CostaraDecimal, DECIMAL_ZERO, DECIMAL_HUNDRED } from './decimal.js';
+import { CostaraDecimal, DECIMAL_ZERO, DECIMAL_HUNDRED } from './decimal.ts';
 import {
   toUniversalDimensionBase,
   findUniversalBaseUnit,
   areUnitsDimensionallyCompatible,
-} from './units.js';
+} from './units.ts';
 import {
   missingPercentageBaseIssue,
   percentageCycleIssue,
   incompatiblePercentageBaseDimensionsIssue,
   incompatiblePercentageItemDimensionIssue,
   incompatibleInputDimensionIssue,
-} from './issues.js';
+} from './issues.ts';
 import type {
   RecipeInputData,
   PercentageBaseData,
@@ -20,7 +20,7 @@ import type {
   CalculationStatus,
   UnitDimensionCode,
   ResolvedRecipeInput,
-} from './types.js';
+} from './types.ts';
 
 export interface FormulaResolutionResult {
   readonly status: CalculationStatus;

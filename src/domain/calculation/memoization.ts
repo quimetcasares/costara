@@ -1,5 +1,5 @@
-import { CostaraDecimal } from './decimal.js';
-import type { CostBreakdownNode, CalculationIssue } from './types.js';
+import { CostaraDecimal } from './decimal.ts';
+import type { CostBreakdownNode, CalculationIssue } from './types.ts';
 
 export interface ProducedItemTemplate {
   readonly outputItemId: string;

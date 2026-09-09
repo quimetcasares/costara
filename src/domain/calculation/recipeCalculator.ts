@@ -1,9 +1,9 @@
-import { CostaraDecimal, DECIMAL_ZERO } from './decimal.js';
-import { resolveRecipeFormula } from './formulaResolver.js';
-import { resolveYieldAndOutput } from './yieldResolver.js';
-import { applyRecipeScaling } from './scalingEngine.js';
-import { resolveRecipeCosting } from './costingEngine.js';
-import { noRecipeAsOfDateIssue } from './issues.js';
+import { CostaraDecimal, DECIMAL_ZERO } from './decimal.ts';
+import { resolveRecipeFormula } from './formulaResolver.ts';
+import { resolveYieldAndOutput } from './yieldResolver.ts';
+import { applyRecipeScaling } from './scalingEngine.ts';
+import { resolveRecipeCosting } from './costingEngine.ts';
+import { noRecipeAsOfDateIssue } from './issues.ts';
 import type {
   RecipeCalculationResult,
   ScaleTarget,
@@ -17,8 +17,8 @@ import type {
   RecipeInputData,
   PercentageBaseData,
   RecipeVersionData,
-} from './types.js';
-import type { RecipeDataProvider } from '../data/types.js';
+} from './types.ts';
+import type { RecipeDataProvider } from '../data/types.ts';
 
 export async function calculatePublishedRecipeAsOf(params: {
   dataProvider: RecipeDataProvider;

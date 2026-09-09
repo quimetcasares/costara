@@ -6,7 +6,7 @@ import type {
   RecipeInputData,
   PercentageBaseData,
   ItemCostResolution,
-} from '../calculation/types.js';
+} from '../calculation/types.ts';
 
 export interface BusinessData {
   readonly id: string;

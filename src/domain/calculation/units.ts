@@ -1,5 +1,5 @@
-import { CostaraDecimal } from './decimal.js';
-import type { UnitData, UnitDimensionCode, CanonicalQuantity } from './types.js';
+import { CostaraDecimal } from './decimal.ts';
+import type { UnitData, UnitDimensionCode, CanonicalQuantity } from './types.ts';
 
 /**
  * Normalizes a quantity in a specific unit to the universal base unit of its physical dimension.

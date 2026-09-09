@@ -1,4 +1,4 @@
-import type { CostaraDecimal } from './decimal.js';
+import type { CostaraDecimal } from './decimal.ts';
 
 export type UnitDimensionCode = 'mass' | 'volume' | 'count' | 'length';
 

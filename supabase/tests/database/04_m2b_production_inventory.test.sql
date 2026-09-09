@@ -250,6 +250,7 @@ SELECT lives_ok(
 -- ============================================================================
 -- 4. RECIPE_VERSION CONGELADA EN RUN
 -- ============================================================================
+RESET ROLE;
 -- 4.1 Run with draft recipe version fails
 SELECT throws_ok(
     $$
@@ -597,6 +598,7 @@ SELECT is_empty(
 );
 
 -- 15. Direct INSERT to inventory_movements is prevented for client roles
+SET LOCAL ROLE authenticated;
 SELECT throws_ok(
     $$
     INSERT INTO public.inventory_movements (
@@ -614,6 +616,7 @@ SELECT throws_ok(
     NULL,
     '15.1 Direct INSERT into inventory_movements is rejected by privileges/RLS'
 );
+RESET ROLE;
 
 
 -- ============================================================================

@@ -1,13 +1,13 @@
-import { CostaraDecimal, DECIMAL_ONE } from './decimal.js';
-import { toUniversalDimensionBase } from './units.js';
-import { invalidScaleTargetIssue, cannotScaleByUnresolvableOutputIssue } from './issues.js';
+import { CostaraDecimal, DECIMAL_ONE } from './decimal.ts';
+import { toUniversalDimensionBase } from './units.ts';
+import { invalidScaleTargetIssue, cannotScaleByUnresolvableOutputIssue } from './issues.ts';
 import type {
   ScaleTarget,
   CanonicalYield,
   ResolvedRecipeInput,
   UnitData,
   CalculationIssue,
-} from './types.js';
+} from './types.ts';
 
 export interface ScalingResult {
   readonly scaleFactor: CostaraDecimal;

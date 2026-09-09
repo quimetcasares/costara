@@ -158,6 +158,18 @@ describe('M1D Full Vertical Slice Functional Smoke Test', () => {
 
     const { data: gUnit } = await adminClient.from('units').select('id').eq('code', 'g').single();
     const gUnitId = gUnit!.id;
+    const { data: kgUnit } = await adminClient.from('units').select('id').eq('code', 'kg').single();
+
+    await adminClient.from('item_cost_versions').upsert({
+      id: 'b0000000-0000-0000-0000-000000000095',
+      business_id: bizBId,
+      item_id: flourItemId,
+      cost_amount: '20.000000000000',
+      cost_quantity: '1.000000000000',
+      unit_id: kgUnit!.id,
+      effective_from: '2026-01-01T00:00:00Z',
+      notes: 'Smoke Seed Cost Biz B',
+    });
 
     await adminClient.from('items').upsert({
       id: ephemOutputItemId,

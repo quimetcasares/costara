@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { CostaraDecimal } from '../calculation/decimal.js';
-import { resolveRecipeFormula } from '../calculation/formulaResolver.js';
+import { CostaraDecimal } from '../calculation/decimal.ts';
+import { resolveRecipeFormula } from '../calculation/formulaResolver.ts';
 import type {
   RecipeInputData,
   PercentageBaseData,
   ItemData,
   UnitData,
-} from '../calculation/types.js';
+} from '../calculation/types.ts';
 
 describe('Formula Resolver', () => {
   const unitG: UnitData = {

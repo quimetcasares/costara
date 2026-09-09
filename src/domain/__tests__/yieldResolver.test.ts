@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { CostaraDecimal } from '../calculation/decimal.js';
-import { resolveYieldAndOutput } from '../calculation/yieldResolver.js';
-import type { RecipeVersionData, ItemData, UnitData } from '../calculation/types.js';
+import { CostaraDecimal } from '../calculation/decimal.ts';
+import { resolveYieldAndOutput } from '../calculation/yieldResolver.ts';
+import type { RecipeVersionData, ItemData, UnitData } from '../calculation/types.ts';
 
 describe('Yield and Theoretical Output Resolver', () => {
   const unitG: UnitData = {

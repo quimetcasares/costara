@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { CostaraDecimal } from '../calculation/decimal.js';
-import { resolveRecipeCosting } from '../calculation/costingEngine.js';
-import { createInMemoryRecipeDataProvider } from '../../data/inMemoryRecipeRepository.js';
+import { CostaraDecimal } from '../calculation/decimal.ts';
+import { resolveRecipeCosting } from '../calculation/costingEngine.ts';
+import { createInMemoryRecipeDataProvider } from '../../data/inMemoryRecipeRepository.ts';
 import type {
   UnitData,
   ItemData,
@@ -10,7 +10,7 @@ import type {
   RecipeInputData,
   ItemCostVersionData,
   ResolvedRecipeInput,
-} from '../calculation/types.js';
+} from '../calculation/types.ts';
 
 describe('Costing Engine', () => {
   const unitG: UnitData = {

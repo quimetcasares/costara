@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { CostaraDecimal } from '../calculation/decimal.js';
+import { CostaraDecimal } from '../calculation/decimal.ts';
 import {
   calculatePublishedRecipeAsOf,
   calculateRecipeDraftPreview,
-} from '../calculation/recipeCalculator.js';
-import { createInMemoryRecipeDataProvider } from '../../data/inMemoryRecipeRepository.js';
+} from '../calculation/recipeCalculator.ts';
+import { createInMemoryRecipeDataProvider } from '../../data/inMemoryRecipeRepository.ts';
 import type {
   UnitData,
   ItemData,
@@ -13,7 +13,7 @@ import type {
   RecipeInputData,
   PercentageBaseData,
   ItemCostVersionData,
-} from '../calculation/types.js';
+} from '../calculation/types.ts';
 
 describe('Recipe Calculator Orchestrator (Historical vs Draft Preview)', () => {
   const unitG: UnitData = {
