@@ -75,3 +75,25 @@ $$\text{Costo Completo Estimado} = \text{Materiales Directos} + \text{Mano de Ob
 ### 5. Costeo de Insumos Intermedios Producidos
 
 Cuando un producto elaborado internamente (por ejemplo, una mermelada o una masa madre) se consume como ingrediente en otra receta compuesta (como unos roles o un pan rústico), su costo de input se deriva directamente de su **costo de producción o adquisición**, **nunca de su precio de venta comercial**.
+
+---
+
+## Principios de Planificación, Producción y Ejecución Operativa (M2)
+
+### 1. Planeación Recurrente vs. Plan Fechado Concreto
+- **Plantillas operativas reusables**: Los talleres y obradores operan frecuentemente bajo ritmos semanales estables (ej. producción base de lunes a sábado). Costara permite estructurar plantillas de planeación como patrones reutilizables.
+- **Planes fechados independientes**: Un plan concreto para una semana específica nace a partir de una plantilla, pero es autónomo: puede ajustarse libremente para responder a pedidos especiales o variaciones de demanda sin alterar la plantilla original, sin reescribir semanas históricas y sin crear versiones de recetas innecesarias.
+
+### 2. Captura Operativa con Mínima Fricción en Taller
+- **Empatía con el entorno físico**: En el área de producción, con poco tiempo y herramientas en mano, la burocracia digital mata la adopción.
+- **Confirmación guiada y registro por excepción**: Al terminar una corrida de producción, el sistema presenta los insumos proyectados y consulta directamente al operador: "¿Usaste las cantidades planeadas? (Sí / Hubo cambios)".
+  - Si confirma "Sí", se asumen y fijan las cantidades planeadas como consumos reales validados.
+  - Si indica "Hubo cambios", la interfaz solo solicita capturar los insumos que variaron puntualmente (ej. 2.050 kg de harina en vez de 2.000 kg).
+
+### 3. Registro Honesto de Desviaciones sin Merma Automática
+- **Desviación como aprendizaje**: Si un lote planeado para 3.5 kg rinde físicamente 3.42 kg, Costara conserva íntegramente la expectativa planeada y el resultado real obtenido (la diferencia de 80 g).
+- **Prohibido asumir merma en automático**: Esa variación física puede deberse a humedad ambiental, residuos en amasadora, evaporación, tolerancias de pesado o técnica de formado. M2 registra los hechos físicos exactos; la clasificación formal de mermas y descartes pertenece al hito M3.
+
+### 4. El Inventario Refleja Hechos Concluidos, No Intenciones
+- **El plan proyecta, la ejecución mueve**: Crear un plan de producción o programar una orden es una proyección hacia adelante; no altera las existencias reales de insumos ni de producto terminado.
+- **Movimientos inmutables al concluir**: El inventario sólo se modifica cuando la corrida física finaliza formalmente o cuando se asienta un movimiento real (recepción o ajuste), generando las salidas de materias primas consumidas y las entradas del producto obtenido en el kardex histórico.

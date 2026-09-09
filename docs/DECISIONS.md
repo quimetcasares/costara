@@ -260,6 +260,112 @@ Este documento registra las decisiones de arquitectura de software fundamentales
 
 ---
 
+## ADR-024: Separación entre plantilla recurrente de producción y plan fechado concreto (Production plan templates distinct from dated production plans)
+
+* **Status**: Aprobado
+* **Context**: Los obradores y plantas de producción artesanal operan sobre patrones de demanda y ritmos semanales regulares (ej. producción de lunes a sábado con volúmenes base de masas y surtido). Sin embargo, cada semana real sufre ajustes por pedidos especiales, feriados o disponibilidad de insumos. Si el plan semanal se confunde con la plantilla recurrente, cualquier ajuste temporal destruiría el patrón base del negocio; y si se modela rígidamente, el usuario se ve forzado a recrear la planificación completa desde cero cada semana.
+* **Decision**: Separar conceptualmente la plantilla recurrente de producción (`production_plan_templates` y sus items relativos por día de la semana) del plan fechado concreto (`production_plans` y sus `production_targets` específicos por fecha). El plan concreto puede instanciarse a partir de una plantilla y editarse libremente (agregar targets, modificar cantidades o cancelar partidas) sin alterar la plantilla reusable, sin afectar los planes de semanas pasadas, sin mutar recetas y sin crear versiones de receta.
+* **Consequences**:
+  * *Positivas*: Flujo ágil de planificación semanal con mínima fricción para el usuario, respetando patrones operativos sin perder flexibilidad ni comprometer la historia pasada.
+  * *Negativas*: El sistema debe gestionar dos niveles de abstracción: la plantilla estructural abstracta y las instancias de planes fechados.
+
+---
+
+## ADR-025: Requerimientos de insumos e intermedios compartidos como proyección calculada bajo demanda (Production requirements are derived projections, not persisted source entities)
+
+* **Status**: Aprobado
+* **Context**: Múltiples productos terminados planificados (ej. 20 Conchas, 4 Pan de Deus, 12 Trenzas, 12 Roles Canela, 6 Roles Philadelphia) consumen y comparten una misma preparación intermedia (Masa Dulce). A su vez, dicha preparación intermedia requiere materias primas base (harina, huevo, mantequilla, etc.). Si los requerimientos consolidados de masas intermedias y compras se persisten prematuramente como entidades fuente en una tabla rígida al crear el plan, cualquier edición posterior a los targets o actualización de recetas provocaría inconsistencias de sincronización. Por otra parte, si la proyección utilizara ingenuamente "la receta activa actual" al consultar un plan histórico, la publicación de nuevas versiones alteraría retroactivamente los requerimientos de semanas pasadas, violando la reproducibilidad histórica.
+* **Decision**: Tratar los requerimientos consolidados de producción y compras (explosión de materiales e intermedios compartidos) como una **métrica proyectada y derivada calculada bajo demanda** a partir de la relación entre los `production_targets` del plan y las `recipe_versions` determinadas de forma determinista para la fecha programada de producción (`asOf(target_date)` con `effective_from <= target_date`, conforme a ADR-013 y ADR-020). No se crea una entidad fuente persistida `ProductionRequirement` en M2A. Queda estrictamente prohibido usar "la receta activa al momento de la consulta". Una vez que una corrida de producción física (`production_run`) se materializa o inicia, queda explícitamente vinculada a su `recipe_version_id` exacta e inmutable; publicaciones posteriores de recetas nunca alteran corridas históricas ni hechos ya ejecutados. La disyuntiva sobre si el plan fechado debe congelar la sugerencia de versión al planificarse o resolverla determinísticamente por fecha se documenta como decisión abierta en OPEN-007.
+* **Consequences**:
+  * *Positivas*: Cero riesgo de desincronización entre planes, recetas e insumos consolidados; cálculo determinista y puro basado en el motor de dominio con estricta reproducibilidad histórica.
+  * *Negativas*: Requiere ejecutar el algoritmo de agregación y explosión de receta bajo demanda al consultar la vista de preparación de producción.
+
+---
+
+## ADR-026: Ciclo de vida inmutable de ejecución de producción y captura de consumos de baja fricción (Production run lifecycle and low-friction actuals capture)
+
+* **Status**: Aprobado
+* **Context**: Registrar la ejecución real de un lote de producción en taller debe ser veloz y honesto. Los operarios no tienen tiempo de reescribir manualmente listas completas de ingredientes pesados en báscula. Al mismo tiempo, una vez finalizado un lote físico, sus resultados reales y consumos validados deben quedar congelados para mantener la integridad histórica y contable.
+* **Decision**: Modelar la corrida de producción (`production_runs`) con un ciclo de vida claro: `planned` -> `in_progress` -> `completed` (o `cancelled`), vinculada a la `recipe_version_id` exacta utilizada. La captura de consumos reales (`production_run_inputs`) adopta el principio de baja fricción: el sistema precarga las cantidades planificadas y ofrece al operario una confirmación rápida: "¿Se usaron las cantidades planeadas? (Sí / Hubo cambios)". Si confirma que sí, las cantidades planeadas se asientan como hechos reales validados. Si hubo cambios, únicamente se capturan los insumos que variaron. Al alcanzar el estado `completed`, los resultados y consumos reales quedan fijados de manera inmutable; cualquier corrección posterior deberá ser trazable y no destructiva.
+* **Consequences**:
+  * *Positivas*: Adopción amigable en el entorno físico de taller con mínima fricción operativa, garantizando inmutabilidad histórica y trazabilidad total post-cierre.
+  * *Negativas*: La interfaz debe soportar un flujo intuitivo de captura por excepción y los servicios deben proteger los registros completados contra modificaciones directas.
+
+---
+
+## ADR-027: Movimientos de inventario generados exclusivamente por hechos operacionales concluidos (Inventory movements generated by completed operational events, not by plans)
+
+* **Status**: Aprobado
+* **Context**: Planificar la producción de 10 kg de pan o crear una orden de trabajo no consume físicamente harina ni crea piezas terminadas en el anaquel. Si la planificación afectara directamente los balances de inventario, se distorsionaría la existencia física real disponible para otras operaciones. Al mismo tiempo, el inventario del mundo real no se alimenta únicamente de corridas de taller: ADR-003 contempla conceptualmente entradas por compra/recepción, salidas por producción y venta, ajustes de conteo físico y mermas. Restringir el Kardex a una única entidad fuente impediría la extensibilidad natural de la plataforma.
+* **Decision**: Establecer que la planificación (planes y targets) **nunca mueve inventario**. Los movimientos de inventario (`inventory_movements`, ADR-003) se originan exclusivamente a partir de **hechos operacionales concluidos y confirmados**. Un lote de producción finalizado (`production_run` con `status: completed`) es **una fuente operacional legítima** de movimientos (asentando atómicamente salidas de insumos consumidos `production_input` y entradas del producto obtenido `production_output`). Otras fuentes operacionales (como recepciones de compra, ventas comerciales o ajustes de inventario) podrán generar movimientos bajo este mismo modelo inmutable sin alterar la semántica central del Kardex. Cada registro en `inventory_movements` debe conservar referencia y origen explícito (`source_entity_type`, `source_entity_id`) para auditar la causa exacta del movimiento.
+* **Consequences**:
+  * *Positivas*: Concordancia absoluta entre el kardex digital de inventario y la realidad física del almacén u obrador en todo momento, con una arquitectura abierta a múltiples fuentes operacionales sin duplicar lógica contable.
+  * *Negativas*: Las materias primas asignadas a planes futuros no se bloquean físicamente en inventario; si el negocio requiere pre-asignación o reservas, deberá modelarse como una métrica proyectada y no como una alteración del kardex.
+
+---
+
+## ADR-028: Registro honesto de desviaciones reales de producción sin clasificación automática de merma (Actual production deviations recorded without automatic waste classification)
+
+* **Status**: Aprobado
+* **Context**: En la producción física, el rendimiento final obtenido (ej. 3.42 kg de masa) casi siempre difiere del nominal planificado (ej. 3.5 kg). Clasificar de forma automática esa diferencia (80 g) como "merma" o "desperdicio" es falso: puede tratarse de masa en reposo, humedad residual, tolerancia de instrumentos de medición o variación normal del amasado. Además, forzar que la receta se altere para reflejar ese lote destruiría el estándar oficial de formulación.
+* **Decision**: Registrar de forma independiente el objetivo planeado y el resultado real obtenido en la corrida física (`production_runs`), conservando la desviación numérica exacta. Costara prohíbe clasificar automáticamente las desviaciones operacionales de M2 como "merma" contable o de descarte; la categorización formal de mermas se difiere a M3. Asimismo, queda prohibido que las desviaciones de un lote modifiquen automáticamente la versión canónica de la receta (`recipe_versions`).
+* **Consequences**:
+  * *Positivas*: Integridad entre expectativa nominal y realidad empírica, recopilación de datos objetivos para análisis retrospectivo y protección de la estabilidad de las recetas.
+  * *Negativas*: Los reportes de M2 deben presentar la desviación como "variación de rendimiento" o "diferencia operativa", evitando terminología apresurada de merma financiera.
+
+---
+
+## ADR-029: Recepción mínima de inventario comprado en M2 (Minimal purchased inventory receipt in M2)
+
+* **Status**: Aprobado
+* **Context**: En M2, las corridas de producción (`production_runs`) generan movimientos inmutables de salida de insumos en el Kardex (`inventory_movements`). Si no existe una vía para dar de alta inventario comprado en el taller, los saldos de materias primas (harina, azúcar, mantequilla, etc.) caerían en números negativos perpetuos, destruyendo la utilidad del control de existencias. Sin embargo, el ROADMAP de M2 está estrictamente acotado a la planificación, ejecución y movimientos derivados de producción; diseñar un módulo comercial completo de compras (órdenes de compra, facturación fiscal, cuentas por pagar y flujo comercial de proveedores) causaría una inflación de alcance inaceptable. Al mismo tiempo, registrar las llegadas de insumos como simples "ajustes de inventario" o "saldos iniciales" distorsionaría la semántica contable del Kardex.
+* **Decision**: Aprobar la **recepción mínima de inventario** como un hecho operacional simple de almacén durante M2. El sistema permitirá registrar la entrada física directa de stock comprado/recibido (item, cantidad, unidad, fecha, con lote o referencia opcional) generando un movimiento legítimo de entrada en `inventory_movements`. Esta recepción mínima:
+  1. No constituye un módulo de compras: no requiere órdenes de compra, facturación, cuentas por pagar ni catálogo comercial rígido de proveedores.
+  2. Representa un hecho real y distinguible: genera un movimiento de entrada claramente clasificado como recepción de insumo (`purchase_receipt` o recepción de inventario), diferenciándose conceptual y semánticamente de:
+     - saldos iniciales (`initial_balance`);
+     - ajustes físicos por conteo (`inventory_adjustment`);
+     - entradas de producción (`production_output`);
+     - futuras ventas comerciales;
+     - futuras mermas de descarte.
+* **Consequences**:
+  * *Positivas*: Kardex íntegro, limpio y con saldos reales desde M2 sin inflar el alcance hacia un ERP comercial; Panara puede ingresar sus bultos de harina y costales en tres toques; compatible 100% con ADR-003 y con la evolución hacia un módulo de compras formal en hitos futuros.
+  * *Negativas*: En M2 no habrá trazabilidad comercial ni contable de órdenes de compra frente a proveedores; los costos de compra seguirán rigiéndose por el historial de costos de ítems (ADR-017) hasta que se aborde el ciclo comercial completo.
+
+---
+
+## ADR-030: Doble preservación de versión de receta entre intención de planificación y ejecución física (Preservation of recipe version in production targets and runs)
+
+* **Status**: Aprobado
+* **Context**: Entre el momento en que se planifica una meta de producción (ej. el domingo para el miércoles) y el momento en que se ejecuta la corrida física en taller, la receta del producto puede evolucionar mediante la publicación de una nueva versión (`recipe_versions`). Si el plan no preserva la versión utilizada al crearse, al consultarlo semanas después el cálculo dinámico resolvería una versión distinta, impidiendo saber qué insumos vio o consideró el planificador cuando armó el plan. Además, el modelo actual de Costara permite que una `recipe_version` se publique con `effective_from` pasado (siempre que conserve el orden cronológico estricto respecto a versiones publicadas previas), lo que causaría que publicaciones retroactivas mutaran silenciosamente planes históricos pasados. Por otra parte, si el plan congelara la receta rígidamente sin advertir al operario de una versión más reciente, el taller podría hornear con una formulación obsoleta o errónea.
+* **Decision**: Adoptar la **alternativa híbrida mínima** que preserva dos verdades operacionales independientes:
+  1. **Intención histórica de planificación**: Cada meta de producción (`production_target`) conserva la referencia `recipe_version_id` correspondiente a la versión utilizada al calcular o confirmar originalmente ese target. Publicaciones posteriores de recetas nunca modifican ni reescriben silenciosamente esta referencia histórica, garantizando la reproducibilidad de lo que vio el usuario al planificar.
+  2. **Detección preventiva de cambio antes de ejecutar**: Antes de ejecutar la producción (o al consultar el plan fechado), Costara puede comparar la versión guardada en el target contra la versión oficial aplicable para `target_date`. Si son diferentes, el sistema detecta el cambio y lo hace visible de forma transparente en la interfaz, sin modificar el target histórico silenciosamente.
+  3. **Versión realmente utilizada en ejecución**: Cada corrida física de producción (`production_run`) congela explícitamente y de manera inmutable el `recipe_version_id` en el instante en que la corrida física se materializa o inicia (`planned` o `in_progress`). Una publicación posterior de receta mientras el lote está en progreso nunca altera la corrida iniciada. Por su parte, la transición a `completed` congela los resultados reales obtenidos (`actual_yield_quantity`), los consumos reales y los movimientos derivados de inventario, no la versión de receta (que ya quedó fijada desde el inicio).
+  4. **Política operativa diferida**: No se formaliza todavía como regla que cualquier operario pueda elegir libremente utilizar versiones históricas anteriores. La política de permisos y flujos de autorización para actualizar un plan o mantener excepcionalmente una versión anterior queda abierta para definirse posteriormente en el flujo operativo y de interfaz (UI).
+* **Consequences**:
+  * *Positivas*: Blindaje absoluto contra publicaciones retroactivas de recetas; reproducibilidad histórica fidedigna de la intención del planificador y de la realidad física del taller; cero cambios silenciosos de formulación.
+  * *Negativas*: Requiere que `production_targets` almacene una referencia foránea a `recipe_version_id` y que la capa de aplicación/UI compare las versiones al desplegar planes con fechas posteriores a publicaciones de receta.
+  * *Consecuencia sobre `effective_from` retroactivo*: Se documenta como hecho relevante que el ciclo de vida actual permite publicar una `recipe_version` con `effective_from` pasado (siempre que sea posterior a todas las versiones publicadas previas). Por ello, resolver dinámicamente un plan histórico no es suficiente para preservar la intención del planificador, haciendo indispensable el snapshot en `production_target` para la reproducibilidad, mientras que `production_run` conserva independientemente la verdad de ejecución. En M2A se mantienen intactas las reglas vigentes de `effective_from`.
+
+---
+
+## ADR-031: Conversión interdimensional masa-volumen específica por item con preservación histórica (Item-specific interdimensional mass-volume conversion with historical preservation)
+
+* **Status**: Aprobado
+* **Context**: En la operación real de panadería y manufactura alimentaria, ciertos insumos fluidos (como leche, aceite vegetal, miel o jarabes) se compran comúnmente en unidades de volumen (litros, mililitros, galones), pero en el taller se pesan en báscula por masa (gramos, kilogramos) para asegurar exactitud y agilidad. Si Costara prohibiera toda relación entre masa y volumen, no sería posible conciliar una recepción de 2 L de leche contra un consumo de 1850 g en el Kardex. Por otra parte, habilitar conversiones universales o automáticas entre masa y volumen violaría las leyes físicas y la seguridad dimensional (ADR-006), ya que cada fluido tiene densidades distintas (1 L de agua pesa 1000 g, 1 L de miel pesa aprox. 1420 g y 1 L de aceite pesa aprox. 920 g). Asimismo, la densidad operacional de un producto no debe asumirse como una constante eterna o inmutable: puede variar por proveedor, temperatura, concentración de sólidos, reformulación o calibración. Si un movimiento histórico dependiera de consultar dinámicamente la configuración actual de densidad del item, cualquier actualización futura de la densidad reescribiría y falsearía retroactivamente los balances del Kardex pasado.
+* **Decision**: Aprobar la **conversión interdimensional explícita masa-volumen específica por item**, sujeta a los siguientes principios de dominio e invariantes de reproducibilidad:
+  1. **Unidad base canónica única**: Cada item mantiene una única unidad base canónica (ADR-010). Si la leche se formula y pesa en gramos en el taller, su unidad base canónica es de masa (`g`).
+  2. **Seguridad dimensional universal**: Las conversiones universales permanecen estrictamente restringidas a la misma dimensión física (ADR-006). Quedan prohibidas las conversiones automáticas universales entre masa y volumen.
+  3. **Factor explícito por item**: Se admite la conversión entre masa y volumen exclusivamente para un item específico cuando dicho item tenga configurado un factor o densidad operacional explícita (ej. Leche entera: $1\text{ ml} = 1.03\text{ g}$, o $1\text{ L} = 1030\text{ g}$).
+  4. **Fallo explícito ante ausencia de factor**: Si un item carece de factor de conversión interdimensional configurado, cualquier intento de registrar o mover existencias en una dimensión incompatible con su unidad base debe fallar de forma explícita, exigiendo la configuración del factor o la captura directa en la dimensión canónica.
+  5. **Naturaleza del factor (exacto vs. aproximado)**: El factor configurado puede marcarse como exacto o aproximado (`is_approximate`), distinguiendo estándares calibrados de equivalencias empíricas de taller (ADR-018). Si el factor utilizado está configurado como aproximado, la normalización y los saldos derivados conservan esa naturaleza aproximada en su visualización y auditoría.
+  6. **Invariante de determinismo y preservación histórica**: **Un movimiento histórico de inventario nunca se recalcula retroactivamente usando una configuración de conversión posterior.** La normalización a la unidad base y los saldos derivados son deterministas y reproducibles en función del factor configurado utilizado al momento del evento. Cada movimiento en el Kardex que provenga de una unidad capturada en dimensión distinta a la base debe preservar de forma inmutable la cantidad y unidad originalmente capturadas, así como la cantidad normalizada a la unidad base calculada con el factor vigente al momento del evento (o una referencia inmutable a dicha conversión). Modificaciones futuras en la densidad del item aplicarán exclusivamente a hechos operacionales futuros.
+* **Consequences**:
+  * *Positivas*: Conciliación determinista y reproducible en el Kardex para insumos fluidos pesados en báscula (ej. recepción de 2 L de leche normalizada a 2060 g menos consumo de 1850 g deja un saldo neto de 210 g, conservando su naturaleza aproximada si el factor fue configurado como tal); total apego a la seguridad dimensional de ADR-006; blindaje del Kardex histórico contra recálculos indeseados por cambios de densidad.
+  * *Negativas*: El motor de normalización de inventario debe verificar la existencia del factor específico del item al recibir unidades de otra dimensión; los registros del Kardex deben preservar tanto la cantidad capturada como el equivalente canónico normalizado fijado al momento del registro.
+
+---
+
 # Decisiones Abiertas y Hallazgos de Dominio
 
 > [!NOTE]
@@ -289,13 +395,17 @@ Este documento registra las decisiones de arquitectura de software fundamentales
   - Este dato **NO es conceptualmente equivalente** a `portion_quantity`.
   - En el modelo vigente, `portion_quantity` representa una división homogénea del rendimiento de salida para derivar porciones teóricas en la misma dimensión física (`theoretical_portions = reference_yield / portion_quantity`, ej. 14 kg de masa horneada / 1 kg por porción = 14 porciones).
   - En Pan de Deus, la salida declarada es en conteo (8 piezas) mientras que la división de formado es en masa cruda (70 g por pieza). Son dimensiones y etapas de proceso distintas.
-* **Decisión pendiente**:
-  - Determinar cómo modelar genéricamente cantidades nominales de masa/componente o etapa de proceso por unidad de producto terminado.
-* **Líneas de exploración (NO decisiones tomadas)**:
-  - Relación a nivel de `recipe_inputs`.
-  - Atributo del `item`.
-  - Componente o subreceta intermedia de masa.
-  - Futura abstracción de etapas de proceso/formado.
+* **Hipótesis y Solución Candidata Fuerte (M2A)**:
+  - Evitar por completo la creación de campos o columnas específicas de panadería como `dough_weight_per_piece`.
+  - Modelar genéricamente la relación a través de la receta del producto final:
+    - Salida de receta (`output`): 4 piezas de Pan de Deus (unidad: `piece`).
+    - Insumo directo (`input`): 280 g de Masa Dulce (unidad: `g`).
+  - Con esta estructura, Costara puede derivar matemáticamente:
+    $$\frac{280\text{ g Masa Dulce}}{4\text{ piezas}} = 70\text{ g Masa Dulce por pieza}$$
+  - Esta solución es 100% genérica y aplicable a cualquier industria de manufactura ligera (ej. 50 ml de jarabe por botella, 120 g de relleno por pastel).
+* **Condición para Resolución Formal**:
+  - Esta solución se mantiene como **candidata fuerte pero permanece en estado OPEN**.
+  - No debe cerrarse formalmente como ADR hasta validar su consistencia práctica con el resto de productos del surtido dulce de Panara (Concha, Trenza, Roles de Canela y Roles Philadelphia) y confirmar que la explosión de requerimientos derivados de M2 opera de manera armónica.
 * **Restricciones actuales**:
   - NO crear columnas ad-hoc como `dough_weight_per_piece`.
   - NO inventar campos específicos de panadería en el núcleo.
@@ -305,17 +415,16 @@ Este documento registra las decisiones de arquitectura de software fundamentales
 
 ## OPEN-002: Compra en volumen / consumo en masa
 
-* **Status**: OPEN
+* **Status**: Resuelto formalmente mediante ADR-031 (Conversión interdimensional masa-volumen específica por item con preservación histórica).
 * **Fuente**: Validación de insumos de panadería (Leche entera).
 * **Hecho real confirmado**:
   - Ciertos insumos fluidos se adquieren comercialmente por volumen (litros o galones), pero en el taller se pesan en báscula por masa (gramos) para mayor precisión y velocidad operativa.
-* **Problema de modelado**:
-  - La ADR-006 garantiza seguridad dimensional estricta: las conversiones automáticas solo operan dentro de la misma dimensión física (masa con masa, volumen con volumen).
-  - Las conversiones específicas por item (`item_unit_conversions`, ADR-009) actualmente están diseñadas para presentaciones y empaques dentro de la dimensión base del item.
-* **Decisión pendiente**:
-  - Evaluar en un hito futuro cómo representar densidades o factores de conversión inter-dimensionales específicos por item sin debilitar la integridad ni la seguridad dimensional del motor de cálculo.
-* **Restricciones actuales**:
-  - No resolver en M1. Los insumos fluidos pesados en masa deben modelarse con unidad base de masa (ej. kg) y costos expresados en esa misma dimensión.
+* **Resolución Aprobada (ADR-031)**:
+  - Cada item conserva una única unidad base canónica (ADR-010). Para la leche pesada en taller, su unidad base es masa (`g`).
+  - No existen conversiones universales automáticas entre masa y volumen.
+  - Se admiten conversiones específicas por item mediante factores de densidad explícitos (ej. $1\text{ ml} = 1.03\text{ g}$).
+  - Si no existe factor configurado para el item, la operación entre dimensiones falla explícitamente solicitando configuración.
+  - **Determinismo e invariante histórico**: La normalización a la unidad base y los saldos derivados son deterministas y reproducibles en función del factor utilizado al registrar el evento. Si el factor es aproximado (`is_approximate = true`), el resultado conserva esa condición. Un movimiento histórico nunca se recalcula retroactivamente si en el futuro se modifica la densidad o factor del item. Los hechos operacionales preservan la cantidad/unidad capturada y el valor normalizado fijado al momento del evento.
 
 ---
 
@@ -368,13 +477,47 @@ Este documento registra las decisiones de arquitectura de software fundamentales
   - En el taller, ese remanente físico no se desecha automáticamente: puede redistribuirse entre las piezas, moldearse en una pieza adicional más pequeña para consumo interno o venta secundaria, o integrarse a otra masa.
 * **Problema conceptual**:
   - Clasificar automáticamente el remanente nominal como "merma" o forzar una cantidad exacta de descarte es un error conceptual que distorsiona la práctica real del negocio.
-* **Decisión pendiente**:
+*  **Decisión pendiente**:
   - Mantener fronteras conceptuales estrictas entre cuatro nociones:
     1. Formulación nominal (receta teórica declarada).
     2. Rendimiento esperado de referencia (ej. 8 piezas).
     3. Ejecución física real (lo que efectivamente se pesa, amasa y hornea).
     4. Merma real registrada (lo que legítimamente se desecha o pierde).
   - La captura de ejecución física y mermas reales pertenece a los hitos de producción (M2) y resultado operativo (M3), no a la formulación nominal de recetas de M1.
+
+---
+
+## OPEN-006: Mecanismo de entrada y recepción de inventario comprado en M2
+
+* **Status**: Resuelto formalmente mediante ADR-029 (Recepción mínima de inventario comprado en M2).
+* **Fuente**: Definición del modelo de inventario físico y Kardex en M2.
+* **Hecho real confirmado**:
+  - Un `production_run` genera salidas de inventario para materias primas consumidas (harina, azúcar, etc.) y entradas para preparaciones intermedias o productos terminados.
+  - Para que el inventario de materias primas compradas no sea perpetuamente negativo o inconsistente, se requiere un mecanismo para registrar la existencia inicial o la entrada de compras.
+  - La ADR-003 contempla entradas por compra, pero el ROADMAP de M2 acota el hito al registro de producción y movimientos derivados, sin definir un módulo completo de compras a proveedores con órdenes, facturación ni cuentas por pagar.
+* **Resolución Aprobada (ADR-029)**:
+  - Se aprueba la **Opción A (Recepción mínima de inventario en M2)**.
+  - M2 permite registrar una entrada física simple de stock comprado/recibido (item, cantidad, unidad, fecha), generando un movimiento legítimo de entrada en `inventory_movements` clasificado como recepción de insumo (`purchase_receipt`).
+  - No constituye un módulo de compras: no incluye órdenes de compra, facturación, proveedores rígidos ni cuentas por pagar.
+  - Se distingue conceptualmente de saldos iniciales (`initial_balance`), ajustes físicos (`inventory_adjustment`), salidas/entradas de producción (`production_input`/`production_output`), futuras ventas y futuras mermas.
+
+---
+
+## OPEN-007: Resolución y fijación de recipe_version en planes de producción
+
+* **Status**: Resuelto formalmente mediante ADR-030 (Doble preservación de versión de receta entre intención de planificación y ejecución física).
+* **Fuente**: Definición conceptual de requerimientos derivados y planes de producción en M2A.
+* **Hecho real / Dilema de modelado**:
+  - Las recetas evolucionan en el tiempo a través de versiones históricas inmutables (`recipe_versions`).
+  - Cuando se elabora un plan fechado para una fecha $T$, los requerimientos deben proyectarse de forma determinista para esa fecha (ADR-025).
+  - Cuando una corrida física (`production_run`) se programa o ejecuta, queda obligatoriamente vinculada a una `recipe_version_id` concreta e inmutable (ADR-026).
+  - El ciclo de vida actual permite publicar recetas con `effective_from` pasado (siempre que mantenga el orden cronológico estricto). Si el target no guardara versión, publicaciones retroactivas posteriores reescribirían silenciosamente la intención de planes históricos pasados.
+* **Resolución Aprobada (ADR-030)**:
+  - Se aprueba la **alternativa híbrida mínima** que preserva dos verdades independientes:
+    1. *Intención histórica de planificación*: `production_target` conserva como snapshot la `recipe_version_id` utilizada al calcular o confirmar originalmente el target, garantizando reproducibilidad histórica inmutable.
+    2. *Detección preventiva de cambios*: Antes de ejecutar, el sistema compara la versión del target contra la versión oficial vigente en `target_date`. Si difieren, hace visible el cambio en la interfaz sin mutar silenciosamente el target histórico.
+    3. *Verdad física de ejecución*: `production_run` congela obligatoriamente la `recipe_version_id` efectivamente utilizada en el taller.
+    4. *Política operativa*: La política de permisos/flujo para actualizar un target o mantener excepcionalmente una versión anterior se definirá en el diseño operativo y de UI, sin que M2A asuma que cualquier operador puede elegir versiones arbitrarias libremente.
 
 ---
 
@@ -399,3 +542,82 @@ Este documento registra las decisiones de arquitectura de software fundamentales
     - Costo directo de materiales del lote (8 piezas): $\approx \$56.14588186356\text{ MXN}$.
     - Costo por pieza: $\approx \$7.01823523294\text{ MXN}$.
   - **Hallazgo técnico capital**: La implementación de este caso descubrió un bug real en M1C (`costingEngine.ts`), donde los insumos exclusivos de subrecetas intermedias no se precargaban en el mapa de items durante la resolución recursiva. Este bug fue subsanado quirúrgicamente con cobertura de pruebas automatizadas.
+
+---
+
+### Golden Case M2-001 - Día regular de producción en Panara (Lunes)
+
+* **Propósito**: Demostrar conceptualmente la planificación, la representación de metas de intermedios compartidos, la ejecución física y los movimientos de inventario para una jornada representativa de taller.
+* **Naturaleza del caso**: Documento de validación empírica y modelado conceptual; **NO es una ADR ni un cambio de schema**.
+* **Composición del día regular (Lunes)**:
+  - **Panes en masa / preparaciones**:
+    - Masa Natural: 10 kg
+    - Masa Granos: 14.5 kg
+    - Masa Dulce: 3.5 kg
+  - **Productos discretos en piezas**:
+    - Focaccia: 1 pieza
+    - Panqué de plátano: 1 pieza
+  - **Surtido dulce planificado**:
+    - 20 Conchas
+    - 4 Pan de Deus
+    - 12 Trenzas
+    - 12 Roles de Canela
+    - 6 Roles Philadelphia
+* **Evidencia operacional real vs. Estado de derivación**:
+  - En la práctica viva de Panara, este surtido dulce cotidiano se abastece normalmente preparando aproximadamente 3.5 kg de Masa Dulce (los viernes la planeación especifica 3 kg).
+  - Actualmente, **solo Pan de Deus cuenta con gramaje nominal confirmado y estructurable (70 g de masa cruda por pieza)**. Las cantidades nominales exactas de masa por pieza para Conchas, Trenzas, Roles de Canela y Roles Philadelphia aún no están formalmente confirmadas en la ficha técnica.
+  - Por lo tanto, **NO se afirma que Costara ya derive matemáticamente que ese surtido sume exactamente 3.5 kg**.
+  - En M2, 3.5 kg de Masa Dulce representa un **objetivo operacional real observado** que el sistema permite capturar y programar directamente.
+  - Cuando las recetas de todos los productos del surtido cuenten con las relaciones de consumo suficientes, Costara derivará la proyección matemática agregada y permitirá compararla contra el objetivo operativo de 3.5 kg, sirviendo como valiosa evidencia para validar recetas y mermas de taller.
+* **Dinámica conceptual demostrada**:
+  1. **Targets con unidades heterogéneas**: El plan consolida metas expresadas en masa (`kg`) y metas en piezas (`piece`) respetando la unidad base de cada item.
+  2. **Intermedios compartidos y objetivos de preparación**: El plan representa la necesidad de amasar Masa Dulce como lote intermedio común antes de formar el surtido dulce.
+  3. **Escalado sin versionado**: La receta de Masa Dulce se escala proporcionalmente a 3.5 kg para proyectar los insumos de amasado (harina, huevos, azúcar, mantequilla) sin crear una versión de receta.
+  4. **Ejecución real y consumos de taller**: Se ejecuta la corrida (`production_run`) de Masa Dulce. El operario pesa y registra un rendimiento real obtenido de 3.42 kg (desviación de 80 g conservada honestamente). Al confirmar los insumos usados mediante captura de baja fricción ("¿Cantidades planeadas? Sí / Hubo cambios"), se asientan los consumos reales.
+  5. **Efecto inmutable en inventario**: Al finalizar la corrida de Masa Dulce en estado `completed`, el kardex asienta:
+     - Salidas (`production_input`): Harina, huevos, azúcar, mantequilla, etc.
+     - Entrada (`production_output`): 3.42 kg de Masa Dulce disponible en taller.
+     Posteriormente, al formar y hornear las Conchas y Pan de Deus, las corridas correspondientes consumen Masa Dulce (salida de intermedio) e ingresan piezas terminadas (entrada de producto terminado).
+
+---
+
+### Golden Case M2-002 - Producción de Pan de Deus con Masa Dulce intermedia y resolución candidata de OPEN-001
+
+* **Propósito**: Validar el flujo de producción de un producto final discreto a partir de una preparación intermedia compartida, comprobando la hipótesis de resolución genérica de OPEN-001 sin campos específicos de panadería.
+* **Datos de formulación y ejecución**:
+  - **Target planificado**: 4 piezas de Pan de Deus (`output_item`: Pan de Deus, `quantity`: 4, `unit`: `piece`).
+  - **Receta nominal**:
+    - Rendimiento nominal de lote: 4 piezas (`piece`).
+    - Insumo directo: 280 g de Masa Dulce (`g`).
+    - Insumo directo: 140 g de Crema de Limón (`g`).
+    - Insumo directo: 60 g de Brillo de Huevo (`g`).
+* **Derivación por pieza**:
+  - Cantidad nominal de masa por pieza: $\frac{280\text{ g}}{4\text{ piezas}} = 70\text{ g/pieza}$.
+  - Cantidad nominal de crema por pieza: $\frac{140\text{ g}}{4\text{ piezas}} = 35\text{ g/pieza}$.
+* **Dinámica en taller y separación de hechos**:
+  - Se programa el `production_run` para 4 piezas.
+  - En la mesa de formado, el panadero divide porciones reales que pueden promediar 71 g (total masa consumida: 284 g).
+  - Al completar el run, se captura:
+    - Salida real obtenida: 4 piezas de Pan de Deus.
+    - Consumo real registrado: 284 g de Masa Dulce, 140 g de Crema de Limón.
+  - La diferencia real de 4 g de masa se asienta fielmente en el run y en el movimiento de inventario, sin mutar la receta canónica (que sigue indicando 280 g nominales) y sin asumir arbitrariamente que esos 4 g son merma.
+
+---
+
+### Golden Case M2-003 - Plan semanal recurrente (Plantilla viva vs. Plan fechado concreto)
+
+* **Propósito**: Demostrar la separación operacional entre el patrón semanal repetitivo y las instancias de producción semanales concretas, sin inventar datos no confirmados.
+* **Estructura confirmada de la Plantilla Semanal (`ProductionPlanTemplate`)**:
+  - Lunes: Natural 10 kg, Granos 14.5 kg, Dulce 3.5 kg, Focaccia 1 pza, Panqué de plátano 1 pza.
+  - Martes: Natural 7.5 kg, 3 hogazas grandes de 620 g, Granos 14.5 kg, Pan de caja 3 pzas, Dulce 3.5 kg.
+  - Miércoles: Laminado 12 kg, Pan de ajo 3 kg, Pan de aceituna 3 kg, Dulce 3.5 kg, Focaccia 1 pza.
+  - Jueves: Natural 9.5 kg, Grano 3 kg, Dulce 3.5 kg, Panqué de plátano 1 pza.
+  - Viernes: Dulce 3 kg, Pan de caja 1 pza, Galletas (chocolate + avena).
+  - Sábado: Natural 5.5 kg, Grano 7.5 kg, Dulce 3.5 kg, Pan de caja 2 pzas.
+* **Instanciación y autonomía del plan fechado (`ProductionPlan`)**:
+  - Para una semana concreta en el calendario, el encargado genera el plan fechado inicializándolo a partir de la plantilla semanal regular de Panara.
+  - **Capacidad conceptual de modificación**: El plan fechado es completamente autónomo respecto a la plantilla. Si en una semana determinada el negocio requiere ajustar las cantidades de producción de un día o agregar un producto por pedido extraordinario `[EJEMPLO ILUSTRATIVO HIPOTÉTICO - NO DATO REAL DE PANARA]`, los cambios se aplican exclusivamente sobre los `production_targets` de esa semana.
+  - **Invariantes garantizados**:
+    1. La plantilla semanal base permanece intacta.
+    2. Los planes de semanas pasadas no se modifican.
+    3. No se generan nuevas versiones de recetas.
