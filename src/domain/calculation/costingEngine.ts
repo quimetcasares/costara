@@ -284,11 +284,22 @@ export async function resolveRecipeCosting(params: {
         const subInputs = await dataProvider.getRecipeInputs(subVersion.id);
         const subBases = await dataProvider.getPercentageBases(subVersion.id);
 
+        // Enrich itemsMap with any items required by subInputs that are not yet loaded
+        const subItemsMap = new Map<string, ItemData>(itemsMap);
+        for (const subInput of subInputs) {
+          if (!subItemsMap.has(subInput.itemId)) {
+            const it = await dataProvider.getItem(subInput.itemId);
+            if (it) {
+              subItemsMap.set(it.id, it);
+            }
+          }
+        }
+
         // Resolve sub-recipe formula
         const subFormulaResult = resolveRecipeFormula({
           inputs: subInputs,
           percentageBases: subBases,
-          itemsMap,
+          itemsMap: subItemsMap,
           unitsMap,
         });
 
@@ -313,7 +324,7 @@ export async function resolveRecipeCosting(params: {
           dataProvider,
           asOf,
           unitsMap,
-          itemsMap,
+          itemsMap: subItemsMap,
           activeItemStack: nextStack,
           memoCache,
         });

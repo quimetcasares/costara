@@ -9,9 +9,14 @@ import {
 export interface RecipeCostSummaryProps {
   readonly calculation: RecipeCalculationResult;
   readonly currencyCode?: string;
+  readonly yieldDescription?: string | null;
 }
 
-export function RecipeCostSummary({ calculation, currencyCode = 'MXN' }: RecipeCostSummaryProps) {
+export function RecipeCostSummary({
+  calculation,
+  currencyCode = 'MXN',
+  yieldDescription,
+}: RecipeCostSummaryProps) {
   const {
     knownBatchMaterialCost,
     scaledYield,
@@ -30,6 +35,9 @@ export function RecipeCostSummary({ calculation, currencyCode = 'MXN' }: RecipeC
     scaledPortions && scaledPortions.greaterThan(0) && knownBatchMaterialCost
       ? knownBatchMaterialCost.dividedBy(scaledPortions)
       : undefined;
+
+  const isCountOutput =
+    scaledYield?.dimensionCode === 'count' || scaledYield?.unitCode === 'piece';
 
   const statusBadgeMap: Record<'complete' | 'incomplete' | 'unresolvable' | 'error', { text: string; bg: string; dot: string }> = {
     complete: {
@@ -59,6 +67,7 @@ export function RecipeCostSummary({ calculation, currencyCode = 'MXN' }: RecipeC
     (isCostComplete ? statusBadgeMap.complete : statusBadgeMap.incomplete);
 
   const isScaled = scaleFactor && !scaleFactor.equals(1);
+  const trimmedYieldDescription = yieldDescription?.trim() || null;
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 p-6 shadow-xs">
@@ -83,16 +92,29 @@ export function RecipeCostSummary({ calculation, currencyCode = 'MXN' }: RecipeC
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-5">
-        <div className="bg-stone-50/80 rounded-lg p-3.5 border border-stone-100">
-          <span className="text-[11px] font-medium text-stone-500 block">Rendimiento de salida</span>
-          <span className="text-base font-bold text-stone-800 block mt-0.5">
-            {formatQuantityWithUnit(scaledYield?.quantity, scaledYield?.unitCode)}
-          </span>
+        <div className="bg-stone-50/80 rounded-lg p-3.5 border border-stone-100 flex flex-col justify-between">
+          <div>
+            <span className="text-[11px] font-medium text-stone-500 block">Rendimiento de salida</span>
+            <span className="text-base font-bold text-stone-800 block mt-0.5">
+              {formatQuantityWithUnit(scaledYield?.quantity, scaledYield?.unitCode)}
+            </span>
+          </div>
+
+          {trimmedYieldDescription && (
+            <div className="mt-2.5 pt-2 border-t border-stone-200/60">
+              <span className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider block">
+                Detalle de rendimiento
+              </span>
+              <p className="text-xs text-stone-600 mt-0.5 leading-relaxed break-words">
+                {trimmedYieldDescription}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="bg-stone-50/80 rounded-lg p-3.5 border border-stone-100">
           <span className="text-[11px] font-medium text-stone-500 block">
-            Costo por unidad de masa/volumen
+            {isCountOutput ? 'Costo por unidad' : 'Costo por unidad de masa/volumen'}
           </span>
           <span className="text-base font-bold text-stone-800 block mt-0.5">
             {costPerMassVolumeUnit
@@ -110,6 +132,8 @@ export function RecipeCostSummary({ calculation, currencyCode = 'MXN' }: RecipeC
               ? formatMoney(costPerPortion, currencyCode, 'pieza')
               : scaledPortions
               ? '-'
+              : isCountOutput
+              ? `Salida discreta: ${formatQuantityWithUnit(scaledYield?.quantity, scaledYield?.unitCode)}`
               : 'A granel (sin porciones)'}
           </span>
         </div>

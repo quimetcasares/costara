@@ -4,13 +4,37 @@ Este archivo contiene las directrices obligatorias para cualquier agente de Inte
 
 ---
 
-## 1. Alineación Arquitectónica y de Producto
+## 1. Alineación Arquitectónica y Gobernanza Documental
 
-1. **Consulta de Documentación Exigida**: Antes de realizar cualquier cambio arquitectónico o de diseño de modelo de datos, debes leer y comprender la documentación contenida en `/docs` (`PRODUCT.md`, `DATA_MODEL.md`, `DECISIONS.md`, `ROADMAP.md`).
-2. **Inmutabilidad de Decisiones Documentadas**: No cambies decisiones ni principios documentados en las ADRs (`DECISIONS.md`) de forma silenciosa.
-3. **Manejo de Conflictos con ADRs**: Si una nueva necesidad o requerimiento entra en conflicto con una ADR existente, debes señalar la contradicción explícitamente al usuario antes de modificar la arquitectura.
-4. **Alcance del Milestone**: No implementes funcionalidades pertenecientes a hitos futuros. Trabaja exclusivamente dentro del marco del hito activo indicado en `ROADMAP.md`.
-5. **Agnosticismo de Industria**: No asumas que el dominio siempre será una panadería. La panadería es el caso de estudio inicial; el diseño del código debe ser genérico y configurable.
+1. **Jerarquía Documental Obligatoria**:
+   - `ROADMAP.md`: Define el alcance congelado y la secuencia deliberada de hitos.
+   - `DECISIONS.md`: Registro único de decisiones aprobadas (ADRs) y de decisiones abiertas/hallazgos pendientes de resolución.
+   - `DATA_MODEL.md`: Describe el modelo de datos vigente, implementado o formalmente aprobado.
+   - `PRODUCT.md`: Intención de negocio, filosofía y principios rectores de producto.
+
+2. **Estabilidad Documental**:
+   - No conviertas `ROADMAP.md` en backlog de ideas, diario de desarrollo ni lista de bugs.
+   - No conviertas `DATA_MODEL.md` en repositorio de ideas especulativas o borradores no aprobados.
+   - Toda nueva idea o hallazgo debe documentarse primero en `DECISIONS.md` como decisión abierta antes de tocar otros documentos.
+
+3. **Regla para Hallazgos Nuevos de Dominio**:
+   Si durante la implementación o validación aparece una necesidad real que no cabe limpiamente en el modelo actual:
+   - 1. NO improvisar schema ni agregar columnas al vuelo.
+   - 2. NO reinterpretar silenciosamente campos existentes (por ejemplo, reutilizar campos con una semántica diferente).
+   - 3. NO crear abstracciones específicas o parches exclusivos de una sola receta para forzar que pase el caso.
+   - 4. Registrar el hallazgo de inmediato como decisión abierta (OPEN item) en `DECISIONS.md`.
+   - 5. Continuar con la tarea solo si el milestone activo puede cerrarse correctamente sin resolver ese hallazgo.
+   - 6. Si el hallazgo bloquea el milestone, detenerse de inmediato y solicitar decisión explícita al usuario.
+
+4. **Regla de Casos Reales (Golden Cases)**:
+   - Los casos reales de validación (como formulaciones operativas de Panara) son la máxima autoridad sobre la receta física conocida.
+   - Queda estrictamente prohibido modificar o alterar fixtures reales para acomodarlos a resultados erróneos o limitaciones temporales del motor de cálculo.
+   - Si un Golden Case descubre un conflicto real en el motor o en el modelo, repórtalo con claridad antes de tocar el dominio o la arquitectura.
+
+5. **Inmutabilidad de Decisiones Documentadas**: No cambies decisiones ni principios documentados en las ADRs (`DECISIONS.md`) de forma silenciosa.
+6. **Manejo de Conflictos con ADRs**: Si una nueva necesidad o requerimiento entra en conflicto con una ADR existente, debes señalar la contradicción explícitamente al usuario antes de modificar la arquitectura.
+7. **Alcance del Milestone**: No implementes funcionalidades pertenecientes a hitos futuros. Trabaja exclusivamente dentro del marco del hito activo indicado en `ROADMAP.md`.
+8. **Agnosticismo de Industria**: No asumas que el dominio siempre será una panadería. La panadería es el caso de estudio inicial; el diseño del núcleo debe ser genérico, desacoplado y configurable.
 
 ---
 

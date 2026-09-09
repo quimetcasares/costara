@@ -96,4 +96,114 @@ describe('RecipeCostSummary Component', () => {
     // Portion cost: $29.77 MXN / pieza
     expect(screen.getByText('$29.77 MXN / pieza')).toBeTruthy();
   });
+
+  it('renders yieldDescription and discrete output for piece output without saying "A granel" (Pan de Deus)', () => {
+    const calculation: RecipeCalculationResult = {
+      recipeId: 'rec-pan-de-deus',
+      recipeName: 'Pan de Deus con Crema de Limón',
+      outputItemId: 'item-pan-de-deus',
+      outputItemName: 'Pan de Deus',
+      businessId: 'biz-1',
+      currencyCode: 'MXN',
+      asOf: '2026-06-01T00:00:00Z',
+      status: 'complete',
+      scaleFactor: new CostaraDecimal(1),
+      referenceYield: {
+        quantity: new CostaraDecimal(8),
+        unitId: 'unit-piece',
+        unitCode: 'piece',
+        canonicalQuantity: new CostaraDecimal(8),
+        canonicalUnitCode: 'piece',
+        dimensionCode: 'count',
+      },
+      scaledYield: {
+        quantity: new CostaraDecimal(8),
+        unitId: 'unit-piece',
+        unitCode: 'piece',
+        canonicalQuantity: new CostaraDecimal(8),
+        canonicalUnitCode: 'piece',
+        dimensionCode: 'count',
+      },
+      knownBatchMaterialCost: new CostaraDecimal('56.14588'),
+      knownCostPerOutputUnit: new CostaraDecimal('7.018235'),
+      isCostComplete: true,
+      issues: [],
+      breakdown: [],
+    };
+
+    const yieldDescription =
+      '8 piezas terminadas. División nominal de 70 g de masa cruda por pieza antes de relleno y horneado.';
+
+    render(
+      <RecipeCostSummary
+        calculation={calculation}
+        currencyCode="MXN"
+        yieldDescription={yieldDescription}
+      />
+    );
+
+    // 1. Shows output yield
+    expect(screen.getByText('8 piezas')).toBeTruthy();
+
+    // 2. Shows yieldDescription
+    expect(screen.getByText('Detalle de rendimiento')).toBeTruthy();
+    expect(screen.getByText(yieldDescription)).toBeTruthy();
+
+    // 3. Cost per unit
+    expect(screen.getByText('$7.02 MXN / piece')).toBeTruthy();
+
+    // 4. Does NOT show "A granel (sin porciones)"
+    expect(screen.queryByText(/A granel \(sin porciones\)/i)).toBeNull();
+
+    // 5. Shows discrete output indication
+    expect(screen.getByText('Salida discreta: 8 piezas')).toBeTruthy();
+  });
+
+  it('maintains "A granel (sin porciones)" for bulk mass output without portion_quantity (Masa Madre demo)', () => {
+    const calculation: RecipeCalculationResult = {
+      recipeId: 'rec-mm',
+      recipeName: 'Masa Madre Activa',
+      outputItemId: 'item-mm',
+      outputItemName: 'Masa Madre Activa',
+      businessId: 'biz-1',
+      currencyCode: 'MXN',
+      asOf: '2026-06-01T00:00:00Z',
+      status: 'complete',
+      scaleFactor: new CostaraDecimal(1),
+      referenceYield: {
+        quantity: new CostaraDecimal(1000),
+        unitId: 'unit-g',
+        unitCode: 'g',
+        canonicalQuantity: new CostaraDecimal(1000),
+        canonicalUnitCode: 'g',
+        dimensionCode: 'mass',
+      },
+      scaledYield: {
+        quantity: new CostaraDecimal(1000),
+        unitId: 'unit-g',
+        unitCode: 'g',
+        canonicalQuantity: new CostaraDecimal(1000),
+        canonicalUnitCode: 'g',
+        dimensionCode: 'mass',
+      },
+      knownBatchMaterialCost: new CostaraDecimal('15.00'),
+      knownCostPerOutputUnit: new CostaraDecimal('0.015'),
+      isCostComplete: true,
+      issues: [],
+      breakdown: [],
+    };
+
+    render(
+      <RecipeCostSummary
+        calculation={calculation}
+        currencyCode="MXN"
+        yieldDescription={null}
+      />
+    );
+
+    expect(screen.getByText('1 kg')).toBeTruthy();
+    expect(screen.getByText('$0.02 MXN / g')).toBeTruthy();
+    expect(screen.getByText('A granel (sin porciones)')).toBeTruthy();
+    expect(screen.queryByText('Detalle de rendimiento')).toBeNull();
+  });
 });

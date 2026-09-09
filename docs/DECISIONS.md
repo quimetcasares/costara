@@ -257,3 +257,145 @@ Este documento registra las decisiones de arquitectura de software fundamentales
 * **Consequences**:
   * *Positivas*: Honestidad e integridad financiera absoluta: el usuario obtiene subtotales conocidos útiles sin que el sistema disfrace datos incompletos como costos totales reales.
   * *Negativas*: Las interfaces y capas superiores deben gestionar el estado incompleto y comunicar con claridad los costos faltantes.
+
+---
+
+# Decisiones Abiertas y Hallazgos de Dominio
+
+> [!NOTE]
+> Esta sección documenta hechos reales, dudas conceptuales y vacíos de modelado descubiertos durante las etapas de implementación y validación operativa.
+>
+> **Reglas de gobernanza para esta sección**:
+> 1. **NO son ADRs aprobadas**: Ningún elemento aquí contenido autoriza cambios unilaterales en el código o en la base de datos.
+> 2. **NO describen el modelo actual**: Representan requerimientos y discrepancias reales que el modelo vigente aún no soporta o resuelve de forma simplificada.
+> 3. **Preservación de contexto**: Su propósito es registrar fielmente la realidad observada en taller sin distorsionar el alcance congelado del milestone activo.
+> 4. **Resolución formal**: Cuando uno de estos elementos se resuelva mediante una decisión deliberada:
+>    - a) Se creará la ADR correspondiente en este mismo documento si impacta la arquitectura o principios de dominio.
+>    - b) Se actualizará `docs/DATA_MODEL.md` si se introducen o modifican entidades y campos del esquema vigente.
+>    - c) Se actualizará `docs/ROADMAP.md` únicamente si el alcance planificado de algún hito se ve modificado.
+
+---
+
+## OPEN-001: Cantidad nominal de componente por unidad de output
+
+* **Status**: OPEN
+* **Fuente**: Golden Case 001 (Pan de Deus con Crema de Limón).
+* **Hecho real confirmado**:
+  - Rendimiento esperado de la receta: 8 piezas.
+  - Para formar cada Pan de Deus se toman nominalmente 70 g de masa cruda (antes de relleno y horneado).
+  - Cada pieza recibe además 35 g de Crema de Limón (280 g totales por lote de 8).
+* **Problema de modelado**:
+  - El modelo actual no representa de forma estructurada "70 g de masa cruda por pieza".
+  - Este dato **NO es conceptualmente equivalente** a `portion_quantity`.
+  - En el modelo vigente, `portion_quantity` representa una división homogénea del rendimiento de salida para derivar porciones teóricas en la misma dimensión física (`theoretical_portions = reference_yield / portion_quantity`, ej. 14 kg de masa horneada / 1 kg por porción = 14 porciones).
+  - En Pan de Deus, la salida declarada es en conteo (8 piezas) mientras que la división de formado es en masa cruda (70 g por pieza). Son dimensiones y etapas de proceso distintas.
+* **Decisión pendiente**:
+  - Determinar cómo modelar genéricamente cantidades nominales de masa/componente o etapa de proceso por unidad de producto terminado.
+* **Líneas de exploración (NO decisiones tomadas)**:
+  - Relación a nivel de `recipe_inputs`.
+  - Atributo del `item`.
+  - Componente o subreceta intermedia de masa.
+  - Futura abstracción de etapas de proceso/formado.
+* **Restricciones actuales**:
+  - NO crear columnas ad-hoc como `dough_weight_per_piece`.
+  - NO inventar campos específicos de panadería en el núcleo.
+  - NO reinterpretar ni forzar `portion_quantity` para este fin.
+
+---
+
+## OPEN-002: Compra en volumen / consumo en masa
+
+* **Status**: OPEN
+* **Fuente**: Validación de insumos de panadería (Leche entera).
+* **Hecho real confirmado**:
+  - Ciertos insumos fluidos se adquieren comercialmente por volumen (litros o galones), pero en el taller se pesan en báscula por masa (gramos) para mayor precisión y velocidad operativa.
+* **Problema de modelado**:
+  - La ADR-006 garantiza seguridad dimensional estricta: las conversiones automáticas solo operan dentro de la misma dimensión física (masa con masa, volumen con volumen).
+  - Las conversiones específicas por item (`item_unit_conversions`, ADR-009) actualmente están diseñadas para presentaciones y empaques dentro de la dimensión base del item.
+* **Decisión pendiente**:
+  - Evaluar en un hito futuro cómo representar densidades o factores de conversión inter-dimensionales específicos por item sin debilitar la integridad ni la seguridad dimensional del motor de cálculo.
+* **Restricciones actuales**:
+  - No resolver en M1. Los insumos fluidos pesados en masa deben modelarse con unidad base de masa (ej. kg) y costos expresados en esa misma dimensión.
+
+---
+
+## OPEN-003: Formulación real completa de Masa Madre
+
+* **Status**: OPEN
+* **Fuente**: Hojas de producción de Panara (Masa Madre).
+* **Hecho real confirmado**:
+  - La receta real utiliza Harina de Fuerza y agua.
+  - El rendimiento declarado del lote es de 2 kg.
+  - El tamaño de porción/tanto habitual es de 0.155 kg (155 g), rindiendo aproximadamente 12 tantos.
+  - El proceso técnico requiere un cultivo/starter previo de masa madre que se refresca periódicamente.
+* **Problema de modelado y costeo**:
+  - Se desconoce la proporción exacta del inóculo/starter previo y el tratamiento contable de su costo.
+  - Se requiere clarificar si existe descarte sistemático en los refrescos y cómo reconciliarlo con el rendimiento real.
+* **Aislamiento en Golden Case**:
+  - Para no bloquear la validación de Pan de Deus, la Masa Madre se aisló como insumo con costo de prueba explícito (`[TEST COST ISOLATION - NOT REAL PANARA COST]` a $15.00 MXN/kg) y fuente `costing_source: purchased`.
+* **Decisión pendiente**:
+  - Reconciliar la formulación oficial de refresco y costeo continuo de Masa Madre cuando se cuente con la ficha técnica detallada.
+
+---
+
+## OPEN-004: Empaque dependiente del pedido
+
+* **Status**: OPEN
+* **Fuente**: Operación de empaque y despacho en mostrador.
+* **Hecho real confirmado**:
+  - El material de empaque (bolsas de papel, cajas, domos) no siempre mantiene una relación 1:1 fija con la receta de un producto.
+  - Por ejemplo, un cliente que compra 1 pan recibe 1 bolsa, pero si compra 2 o 3 panes pueden empacarse juntos en una sola bolsa grande o caja.
+* **Problema de modelado**:
+  - Incorporar el empaque como un insumo directo e inmutable dentro de la receta distorsiona el costo real del producto y genera asignaciones erróneas de inventario.
+* **Decisión pendiente**:
+  - Diseñar en un hito futuro (M2/M3) el costeo de materiales de empaque y presentación a nivel de pedido, empaquetado o regla de despacho (*fulfillment*), manteniéndolo fuera de la formulación básica del producto horneado.
+
+---
+
+## OPEN-005: Remanente, merma esperada y merma real
+
+* **Status**: OPEN
+* **Fuente**: Dinámica de formulación, amasado y porcionado en Pan de Deus con Crema de Limón.
+* **Hecho real confirmado**:
+  - Los pesos conocidos confirmados de la masa de Pan de Deus comprenden:
+    - Esponja: 63 g leche + 100 g masa madre + 1 g levadura + 65 g harina de fuerza = 229 g.
+    - Resto de masa con masa conocida: 190 g harina + 45 g agua + 4 g sal + 43 g azúcar + 30 g mantequilla + 60 g huevos (como referencia de masa física de la tarjeta) + 3 g vainilla = 375 g.
+    - Total de masa física conocida: $229\text{ g} + 375\text{ g} = 604\text{ g}$, más el aporte adicional de la ralladura de 1/2 limón y 1/2 naranja.
+  - Para la formulación canónica del huevo, la fuente operativa de verdad sigue siendo 2 piezas de huevo; los 60 g son únicamente una referencia física de taller para entender el balance de masa.
+  - El porcionado nominal de salida son 8 piezas x 70 g de masa cruda = 560 g.
+  - La formulación contiene por tanto más masa física conocida que los 560 g nominales divididos, existiendo un remanente nominal de al menos aproximadamente $604\text{ g} - 560\text{ g} = 44\text{ g}$, más el aporte de las ralladuras.
+  - La cantidad exacta de este remanente no está formalmente establecida porque algunos insumos son discretos/referenciales y existen ralladuras no pesadas.
+  - En el taller, ese remanente físico no se desecha automáticamente: puede redistribuirse entre las piezas, moldearse en una pieza adicional más pequeña para consumo interno o venta secundaria, o integrarse a otra masa.
+* **Problema conceptual**:
+  - Clasificar automáticamente el remanente nominal como "merma" o forzar una cantidad exacta de descarte es un error conceptual que distorsiona la práctica real del negocio.
+* **Decisión pendiente**:
+  - Mantener fronteras conceptuales estrictas entre cuatro nociones:
+    1. Formulación nominal (receta teórica declarada).
+    2. Rendimiento esperado de referencia (ej. 8 piezas).
+    3. Ejecución física real (lo que efectivamente se pesa, amasa y hornea).
+    4. Merma real registrada (lo que legítimamente se desecha o pierde).
+  - La captura de ejecución física y mermas reales pertenece a los hitos de producción (M2) y resultado operativo (M3), no a la formulación nominal de recetas de M1.
+
+---
+
+## Registro de Validación de Casos Reales
+
+### Golden Case 001 - Pan de Deus con Crema de Limón
+
+* **Propósito**: Caso de prueba de oro (*Golden Case*) basado en la operación viva de Panara para verificar el motor de cálculo y costeo recursivo M1C sin depender de aproximaciones teóricas ni de datos ciegos de hojas de cálculo.
+* **Naturaleza del caso**: Documento de validación empírica y contexto histórico; **NO es una ADR ni un cambio de schema**.
+* **Hechos confirmados de la formulación**:
+  - **Receta operativa viva**: Refleja la técnica actual de panadería, no un archivo contable estático.
+  - **Rendimiento de salida**: 8 piezas (`unit: piece`).
+  - **División nominal de masa**: 70 g de masa cruda por pieza antes de relleno y horneado.
+  - **Crema de Limón**: 35 g por pieza consumidos en el formado = 280 g asignados al lote (de un rendimiento declarado de 601 g de la subreceta de crema).
+  - **Brillo de Huevo**: 1 huevo + 60 g de leche; la preparación completa (120 g nominales) se consume/asigna al lote completo de 8 piezas.
+  - **Esponja Pan de Deus**: 229 g consumidos al 100% en la masa (leche 63 g, masa madre aislada 100 g, levadura 1 g, harina de fuerza 65 g).
+  - **Huevos en la masa**: 2 piezas de huevo en la receta física son la fuente de verdad. El peso de 60 g por huevo es únicamente una referencia informativa de taller.
+  - **Empaque fuera de receta**: Las bolsas o domos no forman parte de los insumos directos de la receta.
+  - **Remanente no es merma automática**: La masa excedente no se asume como desperdicio.
+  - **Costos de prueba explícitos**: Todos los costos de materias primas utilizados en este caso están etiquetados como costos de prueba (`[TEST COST - NOT REAL PANARA COST]`) con timestamp fijo `2026-01-01T06:00:00.000Z` (medianoche Ciudad de México). No representan los costos comerciales reales de compra de Panara.
+  - **Resultados matemáticos verificados con costos de prueba**:
+    - Costo directo de materiales del lote (8 piezas): $\approx \$56.14588186356\text{ MXN}$.
+    - Costo por pieza: $\approx \$7.01823523294\text{ MXN}$.
+  - **Hallazgo técnico capital**: La implementación de este caso descubrió un bug real en M1C (`costingEngine.ts`), donde los insumos exclusivos de subrecetas intermedias no se precargaban en el mapa de items durante la resolución recursiva. Este bug fue subsanado quirúrgicamente con cobertura de pruebas automatizadas.

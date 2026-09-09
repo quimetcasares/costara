@@ -626,7 +626,10 @@ function RecipeDraftEditorForm({
 
         {calculationToDisplay ? (
           <>
-            <RecipeCostSummary calculation={calculationToDisplay} />
+            <RecipeCostSummary
+              calculation={calculationToDisplay}
+              yieldDescription={draft.yieldState.yieldDescription}
+            />
 
             {calculationToDisplay.issues.length > 0 && (
               <IssuesList issues={calculationToDisplay.issues} />

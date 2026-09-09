@@ -529,4 +529,89 @@ describe('Recipe Calculator Orchestrator (Historical vs Draft Preview)', () => {
       })
     ).rejects.toThrow(/Business scope mismatch/);
   });
+
+  it('7. BUG FIX REGRESSION: calculates recursive subrecipe containing ingredients NOT present in root recipe', async () => {
+    // Subrecipe produces itemSourdough with water and a unique ingredient: itemYeast (NOT in parent loaf recipe)
+    const itemYeast: ItemData = {
+      id: 'it-unique-yeast',
+      businessId: 'biz-1',
+      name: 'Levadura Exclusiva Subreceta',
+      kind: 'raw_material',
+      baseUnitId: unitG.id,
+      purchasable: true,
+      producible: false,
+      sellable: false,
+      trackInventory: true,
+      isActive: true,
+    };
+    const yeastCost: ItemCostVersionData = {
+      id: 'cost-yeast',
+      businessId: 'biz-1',
+      itemId: itemYeast.id,
+      costAmount: new CostaraDecimal(50),
+      costQuantity: new CostaraDecimal(1),
+      unitId: unitKg.id, // $50/kg = $0.05/g
+      effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+      notes: null,
+    };
+    const subRecipeInputsWithUnique: RecipeInputData[] = [
+      {
+        id: 'sub-inp-unique-1',
+        businessId: 'biz-1',
+        recipeVersionId: sourdoughVersionV1.id,
+        itemId: itemYeast.id, // Item unique to subrecipe
+        position: 1,
+        quantityMode: 'absolute',
+        quantity: new CostaraDecimal(20), // 20g * $0.05 = $1.00
+        unitId: unitG.id,
+        percentage: null,
+        costingSource: 'purchased',
+        notes: null,
+      },
+      {
+        id: 'sub-inp-unique-2',
+        businessId: 'biz-1',
+        recipeVersionId: sourdoughVersionV1.id,
+        itemId: itemFlourWhite.id,
+        position: 2,
+        quantityMode: 'absolute',
+        quantity: new CostaraDecimal(980), // 980g flour
+        unitId: unitG.id,
+        percentage: null,
+        costingSource: 'purchased',
+        notes: null,
+      },
+    ];
+
+    const customFixtures = {
+      ...fixtures,
+      items: [...fixtures.items, itemYeast],
+      itemCostVersions: [...fixtures.itemCostVersions, yeastCost],
+      recipeInputs: [
+        ...fixtures.recipeInputs.filter((i) => i.recipeVersionId !== sourdoughVersionV1.id),
+        ...subRecipeInputsWithUnique,
+      ],
+    };
+    const dataProvider = createInMemoryRecipeDataProvider({ businessId: 'biz-1', fixtures: customFixtures });
+    const asOf = new Date('2026-03-15T00:00:00Z');
+
+    // Root recipe is Hogaza (loafRecipe), which does NOT contain itemYeast
+    const res = await calculatePublishedRecipeAsOf({
+      recipeId: loafRecipe.id,
+      dataProvider,
+      asOf,
+    });
+
+    expect(res.status).toBe('complete');
+    expect(res.isCostComplete).toBe(true);
+    expect(res.issues).toHaveLength(0);
+    // Sourdough node should be present and complete
+    const sourdoughNode = res.breakdown.find((n) => n.itemId === itemSourdough.id);
+    expect(sourdoughNode).toBeDefined();
+    expect(sourdoughNode?.isCostComplete).toBe(true);
+    // The unique yeast item should be inside children of sourdoughNode, scaled by 1400/10000 = 0.14
+    const yeastNode = sourdoughNode?.children?.find((c) => c.itemId === itemYeast.id);
+    expect(yeastNode).toBeDefined();
+    expect(yeastNode?.canonicalQuantity.equals(new CostaraDecimal('2.8'))).toBe(true);
+  });
 });

@@ -339,7 +339,10 @@ export function RecipeDetailView({
           {calculation && (
             <>
               {/* Summary Cards */}
-              <RecipeCostSummary calculation={calculation} />
+              <RecipeCostSummary
+                calculation={calculation}
+                yieldDescription={resolvedVersion?.yieldDescription}
+              />
 
               {/* Issues / Warnings Banner */}
               {calculation.issues.length > 0 && (
