@@ -1,6 +1,6 @@
-# Modelo de Datos y Principios del Dominio - Costara (M0, M1 & M2A)
+# Modelo de Datos y Principios del Dominio - Costara (M0, M1 & M2)
 
-Este documento define el modelo conceptual de dominio para Costara, sus entidades fundamentales, relaciones, invariantes, reglas de cálculo y escenarios de aceptación. En esta etapa (M2A), el modelo abarca desde la fundación (M0), formulación de recetas y costos directos (M1), hasta la planificación de producción, ejecución física en taller y movimientos inmutables de inventario (M2A). Se define a nivel puramente conceptual y documental sin código SQL de implementación ni migraciones.
+Este documento define el modelo conceptual de dominio para Costara, sus entidades fundamentales, relaciones, invariantes, reglas de cálculo y escenarios de aceptación. En esta etapa (M2B + M2C.0), el modelo abarca desde la fundación (M0), formulación de recetas y costos directos (M1), hasta la planificación de producción, ejecución física en taller, conversiones interdimensionales de densidad y movimientos inmutables de inventario (M2).
 
 ---
 
@@ -21,10 +21,11 @@ Establecer las bases conceptuales para representar:
 - Patrones de planificación recurrente y planes de producción fechados e independientes.
 - Objetivos de producción heterogéneos (por masa y unidades discretas).
 - Derivación bajo demanda de requerimientos de insumos y preparaciones intermedias compartidas.
-- Registro y ciclo de vida de corridas de producción física (`planned` -> `in_progress` -> `completed`).
-- Captura de consumos reales con mínima fricción mediante confirmación por excepción.
+- Registro y ciclo de vida de corridas de producción física (`planned` -> `in_progress` -> `completed` / `cancelled`).
+- Captura de consumos reales con mínima fricción y registro de insumos adicionales no planeados.
 - Preservación honesta de desviaciones de taller sin mutación de recetas ni clasificación automática de merma.
-- Kardex de movimientos de inventario inmutables generados exclusivamente por eventos concluidos.
+- Densidad operacional masa-volumen específica por item con indicador de aproximación.
+- Kardex de movimientos de inventario inmutables generados exclusivamente por eventos concluidos, con provenance tipada y reversiones append-only.
 
 Este diseño respalda la filosofía central de Costara: **"Specific today, configurable tomorrow, extensible always"**, permitiendo que el primer caso de validación real (panadería) se modele de forma natural sin condicionar la arquitectura para otros sectores de manufactura ligera o producción.
 
@@ -44,6 +45,7 @@ Para garantizar la seguridad y el aislamiento multi-tenant desde la estructura d
 - `business_members`: Relación de membresía y roles de usuarios con los negocios.
 - `items`: Catálogo unificado de recursos del negocio.
 - `item_unit_conversions`: Presentaciones, empaques o medidas contextuales por item (con soporte para `is_approximate`).
+- `item_densities`: Densidad operacional masa-volumen específica por item (con soporte para `is_approximate`).
 - `unit_aliases` (personalizados, donde `business_id` está definido): Aliases locales del negocio.
 - `recipes`: Identidad lógica y permanente de una receta vinculada a un item de salida.
 - `recipe_versions`: Versiones históricas de formulación (`draft`, `active`, `archived`).
@@ -53,11 +55,10 @@ Para garantizar la seguridad y el aislamiento multi-tenant desde la estructura d
 - `production_plan_templates`: Patrón recurrente de planificación semanal o periódica.
 - `production_plan_template_items`: Metas de producción relativas por día dentro de la plantilla.
 - `production_plans`: Instancia concreta y fechada de un plan de producción.
-- `production_targets`: Objetivos específicos de producción (item, cantidad, unidad, fecha) del plan.
-- `production_runs`: Ejecución física de un lote vinculado a una versión aprobada de receta.
-- `production_run_inputs`: Insumos planificados vs consumidos en la corrida de taller.
-- `inventory_movements`: Registro inmutable tipo Kardex de entradas y salidas de stock.
-
+- `production_targets`: Objetivos específicos de producción (item, cantidad, unidad, fecha, versión congelada) del plan.
+- `production_runs`: Ejecución física de un lote vinculado a una versión aprobada de receta y opcionalmente a un target.
+- `production_run_inputs`: Insumos planificados y consumos reales (nominales y no planeados) en la corrida de taller.
+- `inventory_movements`: Registro inmutable tipo Kardex de entradas, salidas y reversiones con provenance tipada.
 
 ---
 
@@ -442,7 +443,7 @@ Almacena el historial de costos directos de adquisición para materias primas e 
 
 ---
 
-## 5. Especificación Conceptual de Planificación, Producción e Inventario (M2A)
+## 5. Especificación Conceptual de Planificación, Producción e Inventario (M2B + M2C.0)
 
 El hito M2 representa el puente operacional entre la formulación teórica de recetas y la realidad física del taller:
 
@@ -494,26 +495,25 @@ $$\text{Receta Nominal (M1)} \longrightarrow \text{Plan de Producción} \longrig
 |  - production_plan_id: UUID (FK -> production_plans)                              |
 |  - target_date: date                                                              |
 |  - item_id: UUID (FK -> items)                                                    |
+|  - recipe_version_id: UUID (nullable, FK -> recipe_versions) [congelada al correr]|
 |  - target_quantity: numeric exact (> 0)                                           |
 |  - unit_id: UUID (FK -> units)                                                    |
+|  - position: integer                                                              |
 |  - notes: text (nullable)                                                         |
 +-----------------------------------------------------------------------------------+
                                           |
-                                          | (Targets + RecipeVersions activas)
-                                          v [PROYECCIÓN DERIVADA ON-DEMAND]
-               [ Requerimientos Consolidados de Intermedios e Insumos ]
-                                          |
-                                          | guía la programación de
+                                          | 0..N (Target Splitting / Nullable)
                                           v
 +-----------------------------------------------------------------------------------+
 |                                PRODUCTION_RUNS                                    |
 |  - id: UUID (PK)                                                                  |
 |  - business_id: UUID (FK -> businesses)                                           |
-|  - recipe_version_id: UUID (FK -> recipe_versions)                                |
+|  - production_target_id: UUID (nullable, FK -> production_targets)                |
+|  - recipe_version_id: UUID (FK -> recipe_versions) [congelada al crear el run]    |
 |  - status: 'planned' | 'in_progress' | 'completed' | 'cancelled'                  |
 |  - planned_yield_quantity: numeric exact (> 0)                                    |
 |  - planned_yield_unit_id: UUID (FK -> units)                                      |
-|  - actual_yield_quantity: numeric exact (nullable, > 0)                           |
+|  - actual_yield_quantity: numeric exact (nullable, >= 0)                          |
 |  - actual_yield_unit_id: UUID (FK -> units, nullable)                             |
 |  - scheduled_date: date                                                           |
 |  - started_at: timestamptz (nullable)                                             |
@@ -529,11 +529,13 @@ $$\text{Receta Nominal (M1)} \longrightarrow \text{Plan de Producción} \longrig
 |  - id: UUID (PK)                                                                  |
 |  - business_id: UUID (FK -> businesses)                                           |
 |  - production_run_id: UUID (FK -> production_runs)                                |
+|  - recipe_input_id: UUID (nullable, FK -> recipe_inputs) [NULL = unplanned]       |
 |  - item_id: UUID (FK -> items)                                                    |
-|  - planned_quantity: numeric exact (> 0)                                          |
+|  - position: integer                                                              |
+|  - planned_quantity: numeric exact (>= 0) [0 cuando es unplanned]                 |
+|  - planned_unit_id: UUID (nullable, FK -> units)                                  |
 |  - actual_quantity: numeric exact (nullable, >= 0)                                |
-|  - unit_id: UUID (FK -> units)                                                    |
-|  - was_altered: boolean (default false)                                           |
+|  - actual_unit_id: UUID (nullable, FK -> units)                                   |
 |  - notes: text (nullable)                                                         |
 +-----------------------------------------------------------------------------------+
                                           |
@@ -544,15 +546,34 @@ $$\text{Receta Nominal (M1)} \longrightarrow \text{Plan de Producción} \longrig
 |  - id: UUID (PK)                                                                  |
 |  - business_id: UUID (FK -> businesses)                                           |
 |  - item_id: UUID (FK -> items)                                                    |
-|  - movement_type: 'production_input' | 'production_output' | 'purchase_receipt'     |
-|                   | 'inventory_adjustment'                                        |
-|  - quantity: numeric exact (positivo entrada, negativo salida)                    |
-|  - unit_id: UUID (FK -> units)                                                    |
-|  - source_entity_type: text (ej. 'production_run')                                |
-|  - source_entity_id: UUID (FK polimórfica conceptual al run)                      |
+|  - movement_type: 'initial_balance' | 'purchase_receipt' | 'production_input'     |
+|                   | 'production_output' | 'inventory_adjustment' | 'reversal'     |
+|  - quantity_captured: numeric exact no nulo                                       |
+|  - captured_unit_id: UUID (nullable, FK -> units)                                 |
+|  - item_unit_conversion_id: UUID (nullable, FK -> item_unit_conversions)           |
+|  - quantity_base: numeric exact no nulo (+ entrada, - salida)                     |
+|  - base_unit_id: UUID (FK -> units)                                               |
+|  - conversion_factor: numeric exact (> 0)                                         |
+|  - is_approximate: boolean (default false)                                        |
+|  - production_run_id: UUID (nullable, FK -> production_runs)                      |
+|  - production_run_input_id: UUID (nullable, FK -> production_run_inputs)          |
+|  - reversal_of_movement_id: UUID (nullable, FK -> inventory_movements, UNIQUE)    |
 |  - movement_date: timestamptz                                                     |
-|  - created_at: timestamptz                                                        |
+|  - created_by: UUID (nullable, FK -> auth.users)                                  |
 |  - notes: text (nullable)                                                         |
++-----------------------------------------------------------------------------------+
+                                          ^
+                                          | normaliza masa <-> volumen mediante
++-----------------------------------------------------------------------------------+
+|                                 ITEM_DENSITIES                                    |
+|  - id: UUID (PK)                                                                  |
+|  - business_id: UUID (FK -> businesses)                                           |
+|  - item_id: UUID (FK -> items)                                                    |
+|  - mass_unit_id: UUID (FK -> units, dimension mass)                               |
+|  - volume_unit_id: UUID (FK -> units, dimension volume)                           |
+|  - density_factor: numeric exact (> 0)                                            |
+|  - is_approximate: boolean (default false)                                        |
+|  - is_active: boolean (default true, UNIQUE por item_id activo)                    |
 +-----------------------------------------------------------------------------------+
 ```
 
@@ -626,28 +647,42 @@ Representa un objetivo puntual de producción dentro de un plan fechado.
 - `recipe_version_id`: UUID (nullable, FK a `recipe_versions`). Snapshot de la versión de receta utilizada al calcular o confirmar originalmente este objetivo de producción (ADR-030).
 - `target_quantity`: `numeric` exacto (> 0). Cantidad programada.
 - `unit_id`: UUID (FK a `units`). Unidad de medida.
+- `position`: `integer` (default 0). Orden visual de presentación dentro del plan.
 - `notes`: `text` (nullable).
 - `created_at`: `timestamptz`.
 - `updated_at`: `timestamptz`.
 
-**Invariantes:**
+**Invariantes y Reglas:**
+- **Cardinalidad Target -> Runs (`0..N`)**: Un target representa la meta total del plan y no equivale rígidamente a una única corrida física. Una meta puede ejecutarse mediante varias corridas de taller (Target Splitting, ej. una meta de 14 kg ejecutada en dos corridas de 7 kg, o 5 kg + 5 kg + 4 kg). Cada corrida referencia a su target mediante `production_runs.production_target_id`. No existe restricción de unicidad (`UNIQUE`) sobre `production_target_id`.
+- **Producción adicional o no planeada**: Las corridas sin target asignado llevan `production_runs.production_target_id = NULL`.
+- **Congelamiento estricto de intención histórica**: Una vez que existe **cualquier corrida (`production_run`) vinculada al target**, los campos que representan la intención planificada quedan estrictamente inmutables:
+  - `production_plan_id`
+  - `target_date`
+  - `item_id`
+  - `recipe_version_id`
+  - `target_quantity`
+  - `unit_id`
+  - `notes`
+  Cualquier intento de mutar estos campos tras vincular una corrida es rechazado a nivel de base de datos para garantizar la fidelidad de la comparación planificado vs. real.
+- **Presentación visual editable**: El campo `position` permanece editable en todo momento para reordenamiento en la interfaz.
+- **Se elimina la regla antigua**: Queda explícitamente eliminada la regla antigua que permitía modificar targets mientras la corrida no hubiera concluido.
 - `target_date` debe encontrarse dentro del rango `[start_date, end_date]` del plan.
 - `unit_id` debe ser dimensionalmente compatible con la unidad base del item.
-- `recipe_version_id` preserva la versión utilizada al calcular o confirmar originalmente el target. Publicaciones posteriores de recetas nunca modifican ni reescriben silenciosamente esta referencia histórica. Si antes de ejecutar existe una versión más nueva vigente para `target_date`, Costara detecta y hace visible la diferencia de forma preventiva antes de la corrida física (ADR-030).
-- Los targets pueden modificarse mientras la corrida real correspondiente no haya concluido.
+- `recipe_version_id` preserva la versión utilizada al calcular o confirmar originalmente el target. Publicaciones posteriores de recetas nunca modifican ni reescriben silenciosamente esta referencia histórica. Si al iniciar una corrida la versión oficial vigente para `target_date` difiere de la congelada en el target, el sistema detecta y bloquea el inicio con `RECIPE_VERSION_CONFLICT` sin sustituciones silenciosas (ADR-030).
 
 ---
 
 ### 5.5 `derived_production_requirements` (Concepto / Proyección Calculada On-Demand)
 Representa la explosión matemática consolidada de materias primas y preparaciones intermedias compartidas requeridas por los targets de un plan.
 
-**Aclaración Fundamental de Arquitectura (ADR-025):**
+**Aclaración Fundamental de Arquitectura (ADR-025 y ADR-030):**
 - **NO es una tabla persistida en la base de datos**.
-- Es una **métrica proyectada calculada on-demand** por el motor de cálculo a partir de los `production_targets` del plan y las `recipe_versions` determinadas de forma determinista para la fecha programada de producción (`asOf(target_date)` con `effective_from <= target_date`, conforme a ADR-013, ADR-020 y ADR-025).
-- **Prohibición de "receta activa actual"**: Queda estrictamente prohibido que la proyección consulte la receta activa al momento de la visualización, ya que cambios futuros de formulación alterarían retroactivamente los requerimientos de planes pasados (violando la reproducibilidad histórica).
-- *Ejemplo conceptual de derivación (cuando se confirmen los gramajes de todo el surtido):*
+- Es una **métrica proyectada calculada on-demand** por el motor de cálculo en TypeScript puro (`src/domain`, conforme a ADR-020).
+- **Reproducibilidad histórica basada en snapshot**: Una vez que `production_target.recipe_version_id` ha sido fijada, las proyecciones y consultas históricas de dicho target parten de ESA versión congelada. No se vuelve a resolver dinámicamente una receta distinta para un target histórico.
+- **Resolución determinista en fecha operacional**: La resolución por fecha `asOf(target_date)` sirve para determinar o contrastar la versión aplicable respecto al calendario local del negocio (`business.timezone`), pero no sustituye silenciosamente la versión histórica del target.
+- *Ejemplo conceptual de derivación:*
   $$\text{20 Conchas} + \text{4 Pan de Deus} + \text{12 Trenzas} + \text{12 Roles Canela} + \text{6 Roles Philly} \longrightarrow \text{Masa Dulce proyectada para contrastar vs. 3.5 kg}$$
-- Si el usuario modifica los targets del plan, la proyección se recalcula instantáneamente, eliminando inconsistencias y registros huérfanos.
+- Si el usuario modifica los targets de un plan antes de su ejecución, la proyección se recalcula instantáneamente, eliminando inconsistencias y registros huérfanos.
 
 ---
 
@@ -657,13 +692,14 @@ Representa una corrida o lote de ejecución física real en taller para una rece
 **Campos conceptuales:**
 - `id`: UUID (Primary Key).
 - `business_id`: UUID (FK a `businesses`).
+- `production_target_id`: UUID (nullable, FK a `production_targets`). Objetivo planificado del que nace la corrida (si es `NULL`, representa producción física adicional/no planeada).
 - `recipe_version_id`: UUID (FK a `recipe_versions`). Versión exacta e inmutable de la receta bajo la cual se ejecuta el lote.
 - `status`: `text` (`planned` | `in_progress` | `completed` | `cancelled`).
-- `planned_yield_quantity`: `numeric` exacto (> 0). Cantidad de producto que se planificó obtener.
+- `planned_yield_quantity`: `numeric` exacto (> 0). Cantidad de producto que se planificó obtener en este lote físico.
 - `planned_yield_unit_id`: UUID (FK a `units`).
-- `actual_yield_quantity`: `numeric` exacto (nullable, > 0). Cantidad física real obtenida al concluir la corrida.
+- `actual_yield_quantity`: `numeric` exacto (nullable, >= 0). Cantidad física real obtenida al concluir la corrida.
 - `actual_yield_unit_id`: UUID (FK a `units`, nullable).
-- `scheduled_date`: `date`. Fecha programada de ejecución.
+- `scheduled_date`: `date`. Fecha programada de ejecución en calendario operacional del negocio.
 - `started_at`: `timestamptz` (nullable). Momento real de inicio del proceso físico.
 - `completed_at`: `timestamptz` (nullable). Momento de finalización física.
 - `created_by`: UUID (nullable, FK a `auth.users`). Usuario u operario responsable.
@@ -673,55 +709,131 @@ Representa una corrida o lote de ejecución física real en taller para una rece
 
 **Invariantes y Reglas:**
 - Solo puede ejecutarse contra versiones publicadas (`active` o `archived`), nunca contra borradores (`draft`).
-- **Fijación inmutable de la receta (ADR-030)**: La versión de receta utilizada (`recipe_version_id`) queda determinada y congelada desde el instante en que la corrida física se materializa o inicia (`planned` o `in_progress`). Una publicación posterior de receta mientras el lote está en proceso nunca altera la versión fijada en esta corrida.
-- **Inmutabilidad de hechos ejecutados**: Al transicionar a `completed`, `actual_yield_quantity` y `actual_yield_unit_id` se vuelven obligatorios. Los resultados obtenidos, consumos reales validados y movimientos derivados de inventario quedan sellados de forma inmutable (ADR-026, ADR-030).
-- **Preservación de diferencias operacionales**: Las discrepancias entre lo planeado y lo real se registran con honestidad sin alterar la receta y sin inferir automáticamente merma contable (ADR-028).
+- **Fijación inmutable de la receta (ADR-030)**: La versión de receta utilizada (`recipe_version_id`) queda congelada desde la creación de la corrida. Publicaciones posteriores de recetas nunca alteran una corrida ya creada o en curso.
+- **Rendimiento real (`actual_yield_quantity >= 0`)**: Al pasar a `completed`, `actual_yield_quantity` y `actual_yield_unit_id` se vuelven obligatorios.
+  - Se permite válidamente `actual_yield_quantity = 0` si hubo ejecución física real pero cero producto utilizable (ej. lote quemado, masa caída o contaminada).
+  - En caso de rendimiento 0, los insumos consumidos generan sus correspondientes salidas `production_input`, pero no se genera ningún movimiento de entrada `production_output`.
+- **Cancelación honesta (`cancelled`)**: El estado `cancelled` representa una corrida sin hechos físicos consumados. Queda estrictamente prohibido cancelar una corrida si ya cuenta con insumos reales capturados o movimientos de inventario asentados; la cancelación nunca puede ocultar consumos reales.
+- **Frontera de privilegios y escritura (M2C.0)**:
+  - Lectura (`SELECT`): Permitida a miembros autenticados del negocio vía RLS.
+  - Escritura directa (`INSERT`, `UPDATE`, `DELETE`): **Revocada por completo** para el rol `authenticated`.
+  - Inicio de corrida: A través de la Edge Function autoritativa `start-production-run` que delega en la función transaccional `private.start_production_run_from_snapshot`.
+  - Finalización de corrida: Exclusivamente mediante la RPC transaccional `public.complete_production_run`.
+  - Cancelación de corrida: Exclusivamente mediante la RPC transaccional `public.cancel_production_run`.
+  - Edición de notas: Exclusivamente mediante la RPC `public.update_production_run_notes` mientras la corrida permanece `in_progress`.
 
 ---
 
 ### 5.7 `production_run_inputs`
-Representa los insumos planificados y los consumos reales efectivamente pesados en la corrida.
+Representa los insumos planificados y los consumos reales efectivamente pesados en la corrida de taller.
 
 **Campos conceptuales:**
 - `id`: UUID (Primary Key).
 - `business_id`: UUID (FK a `businesses`).
 - `production_run_id`: UUID (FK a `production_runs`).
+- `recipe_input_id`: UUID (nullable, FK a `recipe_inputs`). Enlace a la línea nominal de receta.
 - `item_id`: UUID (FK a `items`). Insumo o preparación consumida.
-- `planned_quantity`: `numeric` exacto (> 0). Cantidad proyectada por escalado proporcional de la receta.
+- `position`: `integer` (default 0).
+- `planned_quantity`: `numeric` exacto (>= 0). Cantidad proyectada por el escalado autoritativo de la receta.
+- `planned_unit_id`: UUID (nullable, FK a `units`).
 - `actual_quantity`: `numeric` exacto (nullable, >= 0). Cantidad física real consumida.
-- `unit_id`: UUID (FK a `units`).
-- `was_altered`: `boolean` (default `false`). Indica si la cantidad real difirió de la planificada.
+- `actual_unit_id`: UUID (nullable, FK a `units`).
 - `notes`: `text` (nullable).
 - `created_at`: `timestamptz`.
+- `updated_at`: `timestamptz`.
 
-**Dinámica de Baja Fricción:**
-- Las cantidades planificadas se precargan automáticamente.
-- Al concluir la corrida, el operario confirma rápidamente: "¿Usaste las cantidades planeadas? Sí / Hubo cambios". Si confirma Sí, se fijan las cantidades planificadas como consumos reales validados. Si hubo cambios, únicamente se capturan los insumos que variaron marcando `was_altered = true` (ADR-026).
+**Semántica de Insumos Nominales vs. No Planeados:**
+- **Línea Nominal (generada por la formulación)**:
+  - `recipe_input_id IS NOT NULL`
+  - `planned_quantity > 0`
+  - `planned_unit_id IS NOT NULL`
+  - Corresponde a una entrada formal de la `recipe_version_id` ejecutada.
+  - Las líneas nominales no pueden eliminarse de la corrida.
+- **Línea No Planeada / Adicional (agregada en taller)**:
+  - `recipe_input_id IS NULL`
+  - `planned_quantity = 0`
+  - `planned_unit_id IS NULL`
+  - Representa un ingrediente o aditivo extra utilizado en taller que no figuraba en la formulación nominal.
+  - Se admiten múltiples líneas no planeadas del mismo `item_id`.
+
+**Invariantes y Reglas:**
+- **Eliminación de `was_altered`**: El campo booleano `was_altered` **NO existe** en la base de datos. La comparación entre lo planeado y lo real se deriva on-demand en la capa de cálculo/UI.
+- **Snapshot planeado inmutable**: Las columnas de planificación (`recipe_input_id`, `planned_quantity`, `planned_unit_id`) son estructuralmente inmutables desde la creación de la corrida.
+- **Edición en ejecución**: Mientras la corrida esté `in_progress`, el cliente puede actualizar `actual_quantity`, `actual_unit_id` y `notes`. Los insumos no planeados se registran o descartan mediante las RPCs `add_unplanned_production_run_input` y `remove_unplanned_production_run_input`.
+- **Congelamiento terminal**: Al alcanzar un estado terminal (`completed` o `cancelled`), todos los registros de insumos quedan congelados e inmutables.
 
 ---
 
-### 5.8 `inventory_movements`
-Representa el libro de movimientos inmutables (kardex) de inventario físico.
+### 5.8 `item_densities`
+Representa la relación de conversión de densidad específica (masa <-> volumen) para un item dentro del negocio.
 
 **Campos conceptuales:**
 - `id`: UUID (Primary Key).
 - `business_id`: UUID (FK a `businesses`).
-- `item_id`: UUID (FK a `items`). Item cuyo stock físico se modifica.
-- `movement_type`: `text` (`production_input` | `production_output` | `purchase_receipt` | `initial_balance` | `inventory_adjustment`).
-- `quantity`: `numeric` exacto no nulo. Cantidad desplazada (positiva para entradas, negativa para salidas).
-- `unit_id`: UUID (FK a `units`).
-- `source_entity_type`: `text` (ej. `'production_run'`). Tipo de evento operacional de origen.
-- `source_entity_id`: UUID. Identificador del hecho origen.
-- `movement_date`: `timestamptz`. Momento en que ocurrió el evento físico.
+- `item_id`: UUID (FK a `items`).
+- `mass_unit_id`: UUID (FK a `units`, dimensión `mass`).
+- `volume_unit_id`: UUID (FK a `units`, dimensión `volume`).
+- `density_factor`: `numeric` exacto (> 0). Factor que relaciona masa y volumen normalizados a sus unidades canónicas base (`g` y `ml`).
+- `is_approximate`: `boolean` (default `false`). Distingue densidades calibradas de equivalencias empíricas.
+- `is_active`: `boolean` (default `true`). Estado de activación lógica.
+- `created_at`: `timestamptz`.
+- `updated_at`: `timestamptz`.
+
+**Invariantes y Reglas:**
+- `mass_unit_id` pertenece obligatoriamente a `mass` y `volume_unit_id` a `volume`.
+- **Densidad operacional única activa**: Solo puede existir **como máximo una densidad activa** (`is_active = true`) por item dentro de un negocio (`UNIQUE(business_id, item_id) WHERE is_active = true`).
+- Conversión interdimensional exclusiva masa <-> volumen para el item configurado (ADR-031).
+- **Fallo explícito ante ausencia de densidad**: Si se captura una transacción en una dimensión incompatible con la unidad base del item y no existe una densidad activa, el sistema falla de inmediato exigiendo la configuración del factor.
+- **Preservación histórica**: Todo movimiento de inventario almacena de forma inmutable el factor utilizado al momento del hecho; cambios futuros en la densidad del item aplican únicamente a hechos posteriores.
+
+---
+
+### 5.9 `inventory_movements`
+Representa el libro diario inmutable (kardex) de movimientos de inventario físico.
+
+**Campos conceptuales:**
+- `id`: UUID (Primary Key).
+- `business_id`: UUID (FK a `businesses`).
+- `item_id`: UUID (FK a `items`).
+- `movement_type`: `text` (`initial_balance` | `purchase_receipt` | `production_input` | `production_output` | `inventory_adjustment` | `reversal`).
+- `quantity_captured`: `numeric` exacto no nulo. Cantidad original ingresada por el usuario.
+- `captured_unit_id`: UUID (nullable, FK a `units`). Unidad en la que se ingresó la cantidad.
+- `item_unit_conversion_id`: UUID (nullable, FK a `item_unit_conversions`). Presentación o empaque utilizado.
+- `quantity_base`: `numeric` exacto no nulo. Cantidad normalizada a la unidad base canónica del item (+ entrada, - salida).
+- `base_unit_id`: UUID (FK a `units`). Unidad base canónica del item.
+- `conversion_factor`: `numeric` exacto (> 0). Factor aplicado para normalizar a la unidad base canónica.
+- `is_approximate`: `boolean` (default `false`). Indica si la conversión empleada tuvo naturaleza aproximada.
+- `production_run_id`: UUID (nullable, FK a `production_runs`). Enlace tipado a la corrida de producción origen.
+- `production_run_input_id`: UUID (nullable, FK a `production_run_inputs`). Enlace tipado al insumo específico consumido.
+- `reversal_of_movement_id`: UUID (nullable, FK a `inventory_movements`). Enlace tipado autorreferencial al movimiento que se revierte.
+- `movement_date`: `timestamptz`. Fecha y hora operacional del hecho físico.
+- `created_by`: UUID (nullable, FK a `auth.users`).
 - `notes`: `text` (nullable).
 - `created_at`: `timestamptz`.
 
 **Invariantes y Reglas:**
-- **Inmutabilidad Absoluta**: Los registros de movimiento nunca se sobrescriben ni eliminan físicamente (ADR-002, ADR-003). Cualquier corrección se asienta como un nuevo movimiento de ajuste.
-- **Saldo Derivado**: No existe un campo mutable `current_stock`. El saldo disponible en una fecha $T$ se deriva de la suma acumulada de movimientos normalizados a la unidad base del item (ADR-003, ADR-010).
-- **Disparo Exclusivo por Hechos Operacionales Concluidos**: La planificación (planes y targets) **nunca mueve inventario**. Un `production_run` finalizado (`status: completed`) es **una fuente operacional legítima** que asienta atómicamente salidas de insumos (`production_input`) y entradas de producto (`production_output`) (ADR-027). Otras fuentes operacionales (como recepciones mínimas de compra según ADR-029, ventas o ajustes de inventario) generarán movimientos bajo este mismo modelo sin alterar la semántica central del Kardex.
-- **Recepción Mínima de Inventario Comprado (ADR-029)**: `purchase_receipt` representa una entrada física directa de insumo comprado/recibido en taller. No constituye un módulo comercial de compras (órdenes de compra, facturación, proveedores rígidos ni cuentas por pagar), pero es un hecho operacional de entrada claramente diferenciado de saldos iniciales, ajustes por conteo físico o entradas de producción.
-- **Preservación Histórica de Conversión y Normalización (ADR-031)**: Todo movimiento de inventario preserva de forma inmutable la cantidad y unidad originalmente capturadas, así como el valor normalizado a la unidad base calculado con el factor vigente al momento del evento. La normalización y los saldos son deterministas y reproducibles según el factor configurado; si el factor es aproximado (`is_approximate = true`), el resultado conserva esa condición. Un cambio posterior en la densidad o factor del item nunca altera ni recalcula retroactivamente los movimientos del Kardex pasado.
+- **Convención estricta de signos de `quantity_base`**:
+  - `initial_balance`: Positivo (`quantity_base > 0`). Saldo inicial de existencias.
+  - `purchase_receipt`: Positivo (`quantity_base > 0`). Recepción física directa de insumo comprado (ADR-029).
+  - `production_output`: Positivo (`quantity_base > 0`). Entrada de producto elaborado al completar corrida física.
+  - `production_input`: Negativo (`quantity_base < 0`). Salida de insumo consumido al completar corrida física.
+  - `inventory_adjustment`: Positivo o negativo distinto de cero (`quantity_base != 0`). Ajuste por conteo físico o corrección.
+  - `reversal`: Inverso exacto del movimiento original (`quantity_base = -original.quantity_base`).
+- **Provenance Tipada sin Referencias Polimórficas (ADR-032)**:
+  - Quedan eliminadas las columnas `source_entity_type` y `source_entity_id`.
+  - Salidas de insumos (`production_input`): Enlazan mediante FK obligatoria a `production_run_id` y `production_run_input_id`.
+  - Entradas de producción (`production_output`): Enlazan mediante FK obligatoria a `production_run_id`.
+  - Hechos autónomos (`purchase_receipt`, `initial_balance`, `inventory_adjustment`): El movimiento es en sí mismo el hecho fuente; no requiere enlaces foráneos artificiales.
+  - Reversiones (`reversal`): Enlazan mediante FK obligatoria a `reversal_of_movement_id`.
+- **Reversiones Inmutables y Kardex Append-Only**:
+  - Los movimientos son estrictamente append-only; nunca se actualizan ni eliminan destructivamente.
+  - Un movimiento solo puede revertirse una única vez (`reversal_of_movement_id` cuenta con restricción `UNIQUE`).
+  - Un movimiento de tipo `reversal` no puede ser revertido.
+  - La reversión genera una nueva línea que invierte con exactitud matemática el impacto de `quantity_base` conservando el factor y la trazabilidad del evento original.
+- **Stock Derivado (`get_current_inventory_stock`)**:
+  - No existe columna persistida mutable `current_stock`.
+  - Las existencias disponibles en almacén se derivan exclusivamente como $\sum \text{quantity\_base}$ sobre el historial inmutable.
+  - La función de lectura incluye todos los items con `track_inventory = true`, tanto activos como inactivos. Aquellos items sin movimientos históricos se presentan en saldo cero.
 
 ---
 
@@ -799,29 +911,65 @@ Cuando un item producido (ej. "Mermelada de Fresa") posee un precio de venta al 
 3. **Prohibición de receta activa actual y preservación de intención**: Cada target conserva en `recipe_version_id` la versión con la que fue creado o confirmado originalmente. Queda estrictamente prohibido que consultas posteriores o publicaciones retroactivas reescriban silenciosamente la intención de planes pasados. Si surge una versión más reciente para `target_date`, el sistema detecta y visibiliza la diferencia de forma preventiva antes de la corrida física (ADR-025, ADR-030).
 4. Esta consolidación se trata estrictamente como una **proyección calculada on-demand** y no se persiste prematuramente en tablas estáticas (ADR-025). Si se añade o elimina una meta de producto terminado, el requerimiento de masa intermedia se actualiza instantáneamente de forma determinista.
 
-### 6.13 Ciclo de Vida del ProductionRun e Inmutabilidad de Hechos Ejecutados
-1. Un `production_run` transiciona de manera controlada: `planned` -> `in_progress` -> `completed` (o alternativamente `cancelled`).
-2. La corrida física se asocia a la `recipe_version_id` exacta que se utilizó en el taller.
-3. Al alcanzar el estado `completed`, se registran el rendimiento real (`actual_yield_quantity`, `actual_yield_unit_id`), los consumos reales y el timestamp `completed_at`. A partir de este momento, el hecho físico queda congelado como historia inmutable y no debe modificarse destructivamente (ADR-026).
+### 6.13 Frontera de Ejecución Autoritativa M2C.0, Snapshot Planeado y Privilegios
+1. **Flujo de Ejecución y Autoridad Matemática Única (ADR-020, ADR-021)**:
+   $$\text{Browser} \longrightarrow \text{Edge Function (start-production-run)} \longrightarrow \text{src/domain} \longrightarrow \text{RPC DB (private.start\_production\_run\_from\_snapshot)} \longrightarrow \text{DB}$$
+   La matemática de resolución de formulación, bases porcentuales y escalado reside exclusivamente en `src/domain` como TypeScript puro. La base de datos no recalcula recetas en PL/pgSQL; su rol es validar membresía, integridad referencial, provenance, inmutabilidad de targets y garantizar inserción atómica.
+2. **Frontera de la Edge Function**:
+   - Autentica la identidad del usuario mediante token JWT.
+   - Lee datos del catálogo y recetas bajo el contexto y permisos RLS del usuario.
+   - Valida la zona horaria IANA del negocio (`business.timezone`) sin fallbacks silenciosos a UTC.
+   - Ejecuta `resolveRecipeFormula`, `resolveYieldAndOutput` y `applyRecipeScaling`.
+   - Normaliza todas las cantidades de insumos a la `base_unit_id` canónica del item.
+   - Serializa los valores numéricos a `numeric(30,12)` como texto para cruzar la frontera de persistencia sin degradación flotante.
+   - Invoca mediante rol `service_role` exclusivamente la RPC interna transaccional.
+3. **Detección Preventiva de Conflicto de Receta (ADR-030)**:
+   - Para corridas nacidas de un target, se contrasta la versión snapshot congelada en el target contra la versión oficial publicada aplicable a `target_date` en la zona horaria del negocio.
+   - Si difieren, la Edge Function rechaza la solicitud de inmediato con error tipado `RECIPE_VERSION_CONFLICT`, prohibiendo cualquier sustitución silenciosa de receta.
+4. **Ciclo de Vida y Transición de Estados**:
+   - En M2C.0, la corrida física se materializa directamente en estado `in_progress`, registrando el timestamp `started_at` y congelando el snapshot planeado de insumos.
+   - La transición a `completed` se realiza exclusivamente mediante la RPC `complete_production_run`. Admite válidamente `actual_yield_quantity = 0` si hubo proceso físico real con merma total (lote quemado o arruinado), generando salidas `production_input` pero ninguna entrada `production_output`.
+   - La transición a `cancelled` se realiza mediante la RPC `cancel_production_run`, requiriendo ausencia de hechos físicos consumados (se rechaza si ya existen consumos reales o movimientos de inventario).
+5. **Frontera de Privilegios**:
+   - `INSERT`, `UPDATE` y `DELETE` directo están revocados al rol `authenticated` en `production_runs` y `production_run_inputs`.
+   - Toda mutación de estado ocurre exclusivamente a través de las RPCs controladas de seguridad definer (`complete_production_run`, `cancel_production_run`, `update_production_run_notes`).
 
-### 6.14 Captura Operativa de Consumos con Fricción Mínima
-1. Al crear la corrida, `production_run_inputs` precarga los insumos requeridos calculados por el escalado de la receta.
-2. Al terminar la producción física, la interfaz ofrece al operario una confirmación rápida: "¿Usaste las cantidades planeadas? (Sí / Hubo cambios)".
-3. Si el operario confirma "Sí", el sistema valida y asienta las cantidades planificadas como consumos reales (`actual_quantity = planned_quantity`, `was_altered = false`).
-4. Si indica "Hubo cambios", únicamente se capturan los insumos que variaron puntualmente (marcando `was_altered = true`). Esto minimiza la fricción de captura en el taller sin sacrificar exactitud (ADR-026).
+### 6.14 Captura Operativa de Consumos, Insumos No Planeados y Derivación
+1. **Derivación On-Demand vs. `was_altered`**:
+   - El campo booleano `was_altered` queda eliminado del modelo y de la base de datos.
+   - Cualquier comparación entre cantidades planificadas y cantidades reales consumidas se **deriva on-demand** en la interfaz o capa de servicio.
+2. **Insumos Nominales**:
+   - Precargados a partir de la fórmula de la receta (`recipe_input_id IS NOT NULL`, `planned_quantity > 0`).
+   - Las cantidades planificadas son inmutables.
+   - Durante `in_progress`, el operario captura `actual_quantity`, `actual_unit_id` y `notes`.
+   - Las líneas nominales no pueden eliminarse de la corrida.
+3. **Insumos No Planeados (Taller)**:
+   - Ingredientes adicionales no previstos en la fórmula nominal (`recipe_input_id IS NULL`, `planned_quantity = 0`).
+   - Se registran y eliminan durante `in_progress` mediante las RPCs `add_unplanned_production_run_input` y `remove_unplanned_production_run_input`.
+4. **Congelamiento Terminal**:
+   - Al completar o cancelar la corrida, todos sus insumos quedan sellados e inmutables.
 
 ### 6.15 Preservación Honesta de Desviaciones vs. Clasificación de Merma
 1. Si una corrida planificada para 3.5 kg de masa rinde físicamente 3.42 kg, el sistema registra el rendimiento real y conserva la diferencia operacional (80 g) sin alterar la receta oficial (ADR-015, ADR-028).
 2. Costara **prohíbe clasificar automáticamente las desviaciones de rendimiento como merma o desperdicio en M2**. Una variación puede originarse por evaporación, humedad ambiental, tolerancias de báscula o retención normal en equipos. La categorización y costeo formal de mermas corresponde al hito M3.
 
-### 6.16 Movimientos de Inventario Desacoplados de la Planificación y Disparados por Hechos Concluidos
-1. Ni los planes de producción ni las corridas en estado `planned` o `in_progress` generan movimientos de inventario. El plan representa una expectativa futura y no altera las existencias físicas.
-2. Los movimientos de inventario (`inventory_movements`) se originan **exclusivamente a partir de hechos operacionales concluidos y confirmados**. Un `production_run` finalizado en estado `completed` es **una fuente operacional legítima** que asienta:
+### 6.16 Movimientos de Inventario, Provenance Tipada y Reversiones Append-Only
+1. Ni los planes de producción ni las corridas en estado `in_progress` generan movimientos de inventario. El plan representa una expectativa futura y no altera las existencias físicas.
+2. Los movimientos de inventario (`inventory_movements`) se originan **exclusivamente a partir de hechos operacionales concluidos y confirmados**. Un `production_run` finalizado en estado `completed` es **una fuente operacional legítima** que asienta atómicamente:
    - Salidas (`production_input`): Una línea de salida por cada insumo consumido en `production_run_inputs`.
-   - Entrada (`production_output`): Una línea de entrada por el producto intermedio o terminado obtenido (`actual_yield_quantity`).
-3. El Kardex es abierto y extensible: además de las salidas y entradas de producción, admite recepciones mínimas de inventario comprado (`purchase_receipt`, ADR-029) para ingresar insumos adquiridos sin obligar a un módulo comercial de compras en M2, así como ajustes físicos de inventario y saldos iniciales, sin alterar la estructura central del Kardex (ADR-003, ADR-027).
-4. Los movimientos son inmutables. El stock disponible se deriva sumando las cantidades normalizadas del kardex histórico (ADR-003, ADR-010).
-5. **Conversiones Interdimensionales Explícitas y Preservación Histórica**: Cuando un insumo fluido (ej. leche) cuya unidad base es masa (`g`) se recibe o mueve en volumen (`L`), el motor aplica la densidad/factor específico configurado para ese item (ADR-031). El movimiento asienta de manera inmutable tanto la cantidad capturada como el valor normalizado canónico. La normalización y los saldos son deterministas y reproducibles en función del factor utilizado al momento del evento; si el factor es aproximado (`is_approximate = true`), el resultado derivado conserva esa condición. Un cambio posterior en la densidad configurada del item nunca altera retroactivamente los movimientos históricos ya asentados.
+   - Entrada (`production_output`): Una línea de entrada por el producto intermedio o terminado obtenido (`actual_yield_quantity`), omitiéndose si el rendimiento real fue cero.
+3. **Provenance Tipada sin Polimorfismo (ADR-032)**:
+   - Enlaces foráneos explícitos y tipados a `production_run_id` y `production_run_input_id`.
+   - Hechos autónomos (`purchase_receipt`, `initial_balance`, `inventory_adjustment`) operan como hechos fuente directos sin claves foráneas externas artificiales.
+4. **Reversiones Inmutables (Reversals)**:
+   - Cualquier anulación o corrección de un movimiento se registra mediante un movimiento append-only de tipo `reversal`.
+   - El movimiento de reversión invierte con exactitud el valor de `quantity_base`, referenciando al original mediante `reversal_of_movement_id`.
+   - Restricción estricta de unicidad: un movimiento solo puede revertirse una vez, y un movimiento `reversal` no puede ser revertido.
+5. **Stock Derivado (`get_current_inventory_stock`)**:
+   - Las existencias disponibles no se persisten en columnas mutables; se calculan on-demand mediante $\sum \text{quantity\_base}$ sobre el Kardex inmutable para todos los items con `track_inventory = true`.
+6. **Conversiones Interdimensionales de Densidad y Preservación Histórica (ADR-031)**:
+   - La conversión entre masa y volumen requiere una configuración activa en `item_densities`.
+   - Cada movimiento de inventario almacena de forma inmutable el factor aplicado al momento del registro. Un ajuste posterior en la densidad del item nunca recalcula movimientos históricos del Kardex.
 
 ---
 
@@ -970,7 +1118,7 @@ La receta es la expectativa nominal (M1); el plan es la intención programada (M
 29. **Resolución de Costo Histórico de Item Producido (Historical produced cost resolution):**
     Un item producido ("Mermelada") cambia de versión de receta entre enero (v1: 60% fruta, 40% azúcar) y julio (v2: 70% fruta, 30% azúcar). Un cálculo de costo con fecha de marzo utiliza la versión v1 de enero junto con los costos de insumos vigentes en marzo; un cálculo con fecha de agosto utiliza la versión v2 de julio con los costos de insumos vigentes en agosto.
 
-### Escenarios de Planificación, Producción e Inventario de M2A (30 - 45)
+### Escenarios de Planificación, Producción e Inventario de M2 (30 - 49)
 
 30. **Definición de Plantilla Semanal Recurrente:**
     Un negocio crea la plantilla "Semana Regular Panara" con metas asignadas a los días 1 (Lunes) a 6 (Sábado). Las metas no contienen fechas de calendario y se almacenan como patrón reusable.
@@ -984,8 +1132,8 @@ La receta es la expectativa nominal (M1); el plan es la intención programada (M
 33. **Targets con Unidades Heterogéneas en el Mismo Plan:**
     El plan consolida válidamente metas expresadas en masa (`10 kg` Natural, `base_unit: g`), piezas discretas (`20 piece` Concha, `base_unit: piece`) y unidades compuestas (`1 piece` Panqué de plátano).
 
-34. **Derivación On-Demand de Intermedio Compartido:**
-    Un plan incluye 20 Conchas, 4 Pan de Deus, 12 Trenzas, 12 Roles Canela y 6 Roles Philadelphia junto con un objetivo de taller de 3.5 kg de Masa Dulce. El motor resuelve determinísticamente las versiones de receta vigentes para la fecha del plan y, cuando las formulaciones contienen los consumos respectivos, proyecta la masa requerida para contrastarla contra el objetivo operativo sin tablas rígidas intermedias (ADR-025).
+34. **Derivación On-Demand y Reproducibilidad Histórica de Requerimientos (ADR-025, ADR-030):**
+    Un plan incluye 20 Conchas, 4 Pan de Deus, 12 Trenzas, 12 Roles Canela y 6 Roles Philadelphia junto con un objetivo de taller de 3.5 kg de Masa Dulce. El motor consolida los requerimientos de intermedios a partir de los `recipe_version_id` congelados en los targets del plan. Si una nueva versión de Concha se publica posteriormente, la proyección histórica de este plan no se muta silenciosamente, preservando la intención con la que fue creado.
 
 35. **Derivación de Cantidad por Pieza a partir de Receta Final (Hipótesis OPEN-001):**
     La receta de Pan de Deus declara un rendimiento de 4 piezas y un consumo de 280 g de Masa Dulce. El sistema calcula que cada pieza requiere nominalmente $280\text{ g} / 4 = 70\text{ g}$ de masa cruda sin requerir atributos específicos de panadería en el esquema.
@@ -993,29 +1141,41 @@ La receta es la expectativa nominal (M1); el plan es la intención programada (M
 36. **Planificación sin Impacto en Inventario:**
     La creación o edición de un plan fechado con 25 targets no genera ningún registro en `inventory_movements` ni modifica las existencias físicas disponibles de insumos.
 
-37. **Inicio y Transición de Estados de una Corrida:**
-    Un `production_run` para 3.5 kg de Masa Dulce se inicia en taller, cambiando su estado de `planned` a `in_progress` y registrando el timestamp `started_at` sin alterar el stock de insumos todavía.
+37. **Inicio Autoritativo de Corrida Directamente en In-Progress:**
+    Una corrida para 3.5 kg de Masa Dulce se inicia en taller invocando la Edge Function `start-production-run`. El sistema resuelve la formulación mediante `src/domain`, genera el snapshot inmutable de insumos y materializa directamente el `production_run` en estado `in_progress` con su timestamp `started_at`, sin asumir la existencia de un estado previo persistido `planned`.
 
-38. **Confirmación Rápida de Consumos Planeados ("¿Cantidades planeadas? Sí"):**
-    Al terminar una corrida de 10 kg de Natural, el operario confirma que se usaron las cantidades planeadas; el sistema valida `actual_quantity = planned_quantity` para todos los insumos con `was_altered = false` sin requerir captura manual repetitiva.
+38. **Confirmación Rápida de Consumos Nominales ("¿Cantidades planeadas? Sí"):**
+    Al terminar una corrida de 10 kg de Natural, el operario confirma que se usaron las cantidades planeadas; el sistema valida y asienta `actual_quantity = planned_quantity` y `actual_unit_id = planned_unit_id` para todos los insumos nominales (`recipe_input_id IS NOT NULL`), derivando la coincidencia en la interfaz sin depender de una columna `was_altered`.
 
-39. **Captura por Excepción de Variación de Insumos ("Hubo cambios"):**
-    En un lote de Masa Dulce, el operario pesó 2.050 kg de harina en vez de los 2.000 kg planeados. El sistema asienta 2.050 kg en `production_run_inputs`, marca `was_altered = true` y mantiene la receta canónica intacta (2.000 kg).
+39. **Captura de Variación de Insumos y Adición No Planeada:**
+    En un lote de Masa Dulce, el operario pesó 2.050 kg de harina en vez de los 2.000 kg planeados, y además añadió 50 g de agua extra para ajustar la masa. El sistema asienta 2.050 kg en el insumo nominal correspondiente y registra una línea no planeada (`recipe_input_id = NULL`, `planned_quantity = 0`, `actual_quantity = 0.050 kg`), derivando las desviaciones on-demand y manteniendo la receta oficial intacta.
 
 40. **Preservación Honesta de Desviación de Rendimiento sin Merma Automática:**
     Una corrida planeada para 3.5 kg de Masa Dulce concluye con un rendimiento real de 3.42 kg. El sistema fija `actual_yield_quantity = 3.42 kg`, registra la variación operacional de 80 g y prohíbe clasificarla automáticamente como merma contable o descarte.
 
-41. **Generación Atómica de Movimientos de Inventario al Completar Run:**
-    Al pasar la corrida de Masa Dulce a estado `completed`, el sistema genera atómicamente e inmutablemente movimientos de salida (`production_input`) para harina, azúcar, huevos y mantequilla, y un movimiento de entrada (`production_output`) por 3.42 kg de Masa Dulce.
+41. **Generación Atómica de Movimientos de Inventario y Rendimiento Cero (Merma Total):**
+    Al completar una corrida de Masa Dulce con rendimiento real obtenido de 3.42 kg, el sistema genera atómicamente salidas `production_input` para harina, azúcar, huevos y mantequilla, y una entrada `production_output` por 3.42 kg. Si en un lote alternativo la masa se quema por completo en el horno y concluye con `actual_yield_quantity = 0`, el sistema asienta las salidas `production_input` de los insumos consumidos pero omite legítimamente la generación de movimientos `production_output`.
 
-42. **Inmutabilidad y Bloqueo de Edición en Corridas Completadas:**
-    Una corrida en estado `completed` no permite modificar destructivamente sus rendimientos ni consumos reales. Cualquier ajuste posterior debe realizarse mediante un movimiento de inventario de ajuste compensatorio con trazabilidad completa.
+42. **Inmutabilidad de Corridas Completadas y Corrección Mediante Reversal Append-Only:**
+    Una corrida en estado `completed` no permite modificar destructivamente sus rendimientos ni consumos reales. Cualquier anulación o corrección de los movimientos de inventario generados debe realizarse mediante un movimiento de reversión append-only (`reversal`) con enlace tipado `reversal_of_movement_id`, o mediante un movimiento compensatorio de ajuste (`inventory_adjustment`), garantizando la trazabilidad histórica total del Kardex.
 
 43. **Recepción Mínima de Inventario Comprado en Taller (ADR-029):**
     Al llegar 2 costales de 25 kg de Harina de Fuerza al obrador, el usuario registra una recepción de inventario (item: Harina de Fuerza, cantidad: 50 kg). El sistema genera un movimiento de entrada `purchase_receipt` en `inventory_movements`, aumentando las existencias disponibles sin requerir órdenes de compra ni proveedores formales.
 
-44. **Preservación de Versión al Planificar y Alerta Preventiva ante Nueva Versión (ADR-030):**
-    El domingo se crea una meta de 20 Conchas en un plan para el miércoles, guardando como snapshot la versión vigente en ese momento (`Concha v1`). El lunes se publica `Concha v2`. Al consultar el plan, el sistema preserva `recipe_version_id = v1` sin modificar silenciosamente el target, pero visibiliza que rige `v2` para esa fecha. Al ejecutar la corrida el miércoles, `production_run` congela de forma inmutable la versión que efectivamente se produjo.
+44. **Detección Preventiva de Conflicto de Versión en Fecha Operacional (ADR-030):**
+    El domingo se crea un target de 20 Conchas para el miércoles con snapshot de `Concha v1`. El lunes se publica `Concha v2` con vigencia desde el martes en la zona horaria del negocio (`America/Mexico_City`). Al intentar iniciar la corrida el miércoles, la Edge Function contrasta la versión congelada (`v1`) contra la vigente para `target_date` (`v2`), detecta la discrepancia y rechaza el inicio con error tipado `RECIPE_VERSION_CONFLICT` sin sustitución silenciosa de receta.
 
 45. **Recepción y Consumo Interdimensional con Densidad Específica (ADR-031):**
-    El item "Leche entera" tiene unidad base `g` y un factor configurado de `1 ml = 1.03 g`. Al recibir 2 Litros de leche, el sistema normaliza de forma determinista la entrada a 2060 g en `inventory_movements`. Al consumir 1850 g en una corrida de producción, el kardex registra la salida de 1850 g, resultando en un saldo determinista y reproducible de 210 g (que conservará su naturaleza aproximada si el factor fue configurado como tal). Si semanas después se ajusta la densidad del item a 1.032 g/ml, los 2060 g históricos del movimiento no se recalculan.
+    El item "Leche entera" tiene unidad base `g` y densidad activa de $1\text{ ml} = 1.03\text{ g}$. Al recibir 2 Litros de leche, el sistema normaliza de forma determinista la entrada a 2060 g en `inventory_movements`. Al consumir 1850 g en una corrida de producción, el kardex registra la salida de 1850 g, resultando en un saldo determinista y reproducible de 210 g. Si posteriormente se modifica la densidad en `item_densities`, los 2060 g históricos del movimiento no se recalculan.
+
+46. **División de Target en Múltiples Corridas Físicas (Target Splitting):**
+    Un target programado para 14 kg de Masa Natural se ejecuta en taller mediante dos lotes físicos separados debido a la capacidad de la amasadora: corrida 1 por 7 kg y corrida 2 por 7 kg. Ambas corridas referencian al mismo `production_target_id`. El target congela de forma inmutable sus parámetros de intención en cuanto se inicia la primera corrida, preservando la trazabilidad de que ambas ejecuciones físicas satisfacen la misma meta del plan.
+
+47. **Insumos Adicionales No Planeados en Taller:**
+    Durante una corrida de Pan de Caja en taller, la humedad ambiental exige añadir 30 g de harina adicional y 5 g de levadura no previstos en la fórmula nominal. El sistema registra estas partidas en `production_run_inputs` con `recipe_input_id = NULL`, `planned_quantity = 0`, y sus consumos reales validados. Al completar la corrida, ambas partidas generan sus movimientos de salida `production_input` en el Kardex con trazabilidad tipada.
+
+48. **Derivación de Existencias Reales mediante Kardex (`get_current_inventory_stock`):**
+    El sistema consulta el stock físico de insumos invocando `get_current_inventory_stock`. La función calcula la suma agregada de `quantity_base` sobre los movimientos confirmados del Kardex, incluyendo items activos e inactivos con `track_inventory = true`, presentando en cero los items sin movimientos y sin mantener un campo mutable `current_stock` en la tabla `items`.
+
+49. **Reversión Atómica e Inmutable de Movimiento de Inventario:**
+    Se detecta una captura errónea en una recepción de compra (`purchase_receipt`) por 100 kg de azúcar. El sistema genera un movimiento de reversión (`reversal`) con `quantity_base = -100 kg` vinculado mediante `reversal_of_movement_id`. El movimiento original permanece inalterado en el Kardex, el saldo neto regresa a su valor previo, la restricción de unicidad impide revertir el movimiento original por segunda vez y el sistema prohíbe crear reversiones de una reversión.
