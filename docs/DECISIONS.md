@@ -542,6 +542,36 @@ Este documento registra las decisiones de arquitectura de software fundamentales
 
 ---
 
+## OPEN-008: Corrección trazable de corridas de producción completadas
+
+* **Status**: OPEN
+* **Fuente**: Prueba manual de ejecución de producción en M2C.1 / Dinámica operacional de taller.
+* **Contexto**:
+  - Una corrida completada (`status = 'completed'`) queda congelada como hecho histórico terminal.
+  - En el modelo inmutable de Costara (ADR-002 y ADR-003), este congelamiento es indispensable porque la corrida ya asentó hechos reales en el Kardex (`production_input` para materias primas consumidas y `production_output` para el producto obtenido).
+  - Sin embargo, en el día a día del taller existe un escenario humano real: el operador o encargado finaliza una corrida y posteriormente descubre que capturó por error una cantidad incorrecta (ej. digitó 25 kg en lugar de 2.5 kg, omitió un insumo adicional o registró mal el rendimiento final).
+* **Hallazgo y principio de dominio**:
+  - **Queda estrictamente prohibida la edición directa (direct edit), sobreescritura o borrado destructivo de `production_runs` y `production_run_inputs` completados.**
+  - Alterar registros terminales destruiría la integridad referencial, rompería la auditoría contable y desalinearía los movimientos de inventario ya emitidos.
+  - La corrección futura no debe pretender que el error nunca ocurrió; debe preservar el hecho original intacto y generar una cadena auditable de compensación o corrección *append-only*.
+  - Esta necesidad pertenece al dominio operativo de M2 antes de entrar al piloto real (M4).
+* **Aspectos abiertos que deben resolverse antes de implementar**:
+  1. *Representación relacional*: Cómo vincular la corrida original con su corrección (ej. corrida correctiva vinculada, documento de rectificación o evento explícito de ajuste de corrida).
+  2. *Compensación exacta de inventario*: Cómo revertir o ajustar de manera estricta los `inventory_movements` ya emitidos, garantizando unicidad de reversión (ADR-032) sin duplicar entradas ni desfasar saldos acumulados del Kardex.
+  3. *Captura de nuevos hechos corregidos*: Cómo asentar formalmente las cantidades reales correctas de consumo y rendimiento.
+  4. *Idempotencia y seguridad transaccional*: Garantizar que un intento repetido de corrección no genere múltiples compensaciones accidentales.
+  5. *Visualización en UI*: Cómo presentar con claridad meridiana el hecho original, el evento de corrección, la justificación/motivo documentado y los valores vigentes finales sin confundir al operador de taller.
+  6. *Gobernanza y roles*: Definir qué perfiles tienen autorización para emitir correcciones (ej. encargado de taller o administrador) vs captura estándar de operario.
+  7. *Granularidad del ajuste*: Determinar si la corrección se aplica a la corrida completa en bloque o si permite rectificar hechos específicos (ej. una sola línea de insumo mal capturada sin alterar el rendimiento, o viceversa).
+  8. *Impacto en métricas y analítica futura*: Cómo deben interpretar los reportes futuros de costo real, eficiencia y variaciones plan vs real las corridas que tienen correcciones asentadas.
+* **Delimitación explícita**:
+  - **NO es edición directa ni mutación**: La inmutabilidad de hechos terminales se mantiene inviolable.
+  - **NO es borrado**: Ningún registro se elimina de la base de datos.
+  - **NO es merma automática**: Una corrección por captura errónea no debe confundirse conceptualmente con descarte, daño o merma de taller (OPEN-005).
+  - No se define esquema de base de datos ni solución técnica definitiva en este punto; permanece en estado OPEN para diseño previo al piloto.
+
+---
+
 ## Registro de Validación de Casos Reales
 
 ### Golden Case 001 - Pan de Deus con Crema de Limón
