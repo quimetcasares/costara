@@ -7,6 +7,10 @@ import {
   formatDate,
   formatDateTime,
   formatLocalDateTimeForRpc,
+  isValidIanaTimezone,
+  getOperationalToday,
+  formatOperationalDate,
+  addDaysToDateStr,
 } from '../../src/lib/dateUtils.js';
 
 describe('dateUtils Timezone and As-Of handling (BUG 5 regression tests)', () => {
@@ -80,5 +84,69 @@ describe('dateUtils Timezone and As-Of handling (BUG 5 regression tests)', () =>
     expect(formatDateTime('2026-08-18T15:30:00Z')).toBeDefined();
     expect(formatLocalDateTimeForRpc('2026-08-18T15:30')).toBe('2026-08-18 15:30:00');
     expect(formatLocalDateTimeForRpc('2026-08-18T15:30:45')).toBe('2026-08-18 15:30:45');
+  });
+
+  describe('Operational timezone and date helpers (M2C.1)', () => {
+    it('validates IANA timezones strictly and rejects invalid or empty strings', () => {
+      expect(isValidIanaTimezone('America/Mexico_City')).toBe(true);
+      expect(isValidIanaTimezone('Asia/Tokyo')).toBe(true);
+      expect(isValidIanaTimezone('UTC')).toBe(true);
+      expect(isValidIanaTimezone('Europe/Madrid')).toBe(true);
+
+      expect(isValidIanaTimezone('')).toBe(false);
+      expect(isValidIanaTimezone('   ')).toBe(false);
+      expect(isValidIanaTimezone(null)).toBe(false);
+      expect(isValidIanaTimezone(undefined)).toBe(false);
+      expect(isValidIanaTimezone('Not/A_Real_Timezone')).toBe(false);
+    });
+
+    it('getOperationalToday returns YYYY-MM-DD for valid timezones and throws on invalid', () => {
+      const today = getOperationalToday('America/Mexico_City');
+      expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+      expect(() => getOperationalToday('')).toThrow('Zona horaria del negocio inválida o no configurada');
+      expect(() => getOperationalToday('Fictional/Timezone')).toThrow('Zona horaria del negocio inválida o no configurada');
+    });
+
+    it('formatOperationalDate formats date to human-readable Mexican Spanish', () => {
+      const formatted = formatOperationalDate('2026-09-09');
+      expect(formatted.toLowerCase()).toContain('9 de septiembre de 2026');
+      expect(formatted).toMatch(/^[A-ZÁÉÍÓÚÑ]/); // Capitalized first letter
+    });
+
+    it('formatOperationalDate short format produces exact day without timezone drift', () => {
+      const shortDate = formatOperationalDate('2026-09-09', 'short');
+      expect(shortDate.toLowerCase()).toMatch(/^9 sep(t)?\.? 2026$/);
+      expect(shortDate).not.toContain('8');
+      expect(shortDate).not.toContain('10');
+    });
+
+    it('formatDate on YYYY-MM-DD string prevents UTC midnight shift in negative and positive timezones', () => {
+      // scheduled_date is a DATE-ONLY string
+      const scheduledDate = '2026-09-09';
+      const formatted = formatDate(scheduledDate);
+      expect(formatted.toLowerCase()).toMatch(/^9 sep(t)?\.? 2026$/);
+      expect(formatted).not.toContain('8');
+    });
+
+    it('formatDateTime preserves business timezone for UTC instants', () => {
+      // 2026-09-10T05:26:00Z in America/Mexico_City (UTC-6) is 2026-09-09 at 23:26
+      const instantIso = '2026-09-10T05:26:00Z';
+      const cdmxFormatted = formatDateTime(instantIso, 'America/Mexico_City');
+      expect(cdmxFormatted).toContain('9 sep');
+      expect(cdmxFormatted).toMatch(/11:26|23:26/);
+
+      // In Asia/Tokyo (UTC+9), 2026-09-09T05:26:00Z is 2026-09-09 at 14:26
+      const tokyoFormatted = formatDateTime('2026-09-09T05:26:00Z', 'Asia/Tokyo');
+      expect(tokyoFormatted).toContain('9 sep');
+      expect(tokyoFormatted).toMatch(/2:26|14:26/);
+    });
+
+    it('addDaysToDateStr calculates previous and next day correctly across month/year boundaries', () => {
+      expect(addDaysToDateStr('2026-09-09', 1)).toBe('2026-09-10');
+      expect(addDaysToDateStr('2026-09-09', -1)).toBe('2026-09-08');
+      expect(addDaysToDateStr('2026-12-31', 1)).toBe('2027-01-01');
+      expect(addDaysToDateStr('2026-03-01', -1)).toBe('2026-02-28');
+    });
   });
 });

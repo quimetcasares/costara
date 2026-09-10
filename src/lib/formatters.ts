@@ -22,6 +22,22 @@ export function formatDecimal(val: CostaraDecimal | string | number | null | und
 }
 
 /**
+ * Formats a quantity for human operational presentation (presentation only):
+ * - Integer quantities display without decimals (e.g. 500.000000000000 -> "500").
+ * - Non-integer quantities display up to maxDecimals places (default 3), trimming redundant trailing zeros
+ *   (e.g. 2571.428571428571 -> "2571.429", 1428.571428571429 -> "1428.571", 2.500000000000 -> "2.5").
+ * - Never emits scientific notation for standard operational quantities.
+ * - Does not alter stored values or domain precision.
+ */
+export function formatQuantity(
+  val: CostaraDecimal | string | number | null | undefined,
+  maxDecimals = 3
+): string {
+  if (val === null || val === undefined || val === '') return '-';
+  return formatDecimal(val, maxDecimals);
+}
+
+/**
  * Formats a quantity with its unit symbol or code according to human display rules:
  * - If unit is 'g' and value >= 1000g, converts to 'kg' display.
  * - If unit is 'ml' and value >= 1000ml, converts to 'L' display.
@@ -57,11 +73,34 @@ export function formatQuantityWithUnit(
   }
 
   if (unit === 'piece' || unit === 'pza' || unit === 'pieza' || unit === 'piezas') {
-    return `${formatDecimal(dec, 2)} ${dec.equals(1) ? 'pieza' : 'piezas'}`;
+    return `${formatDecimal(dec, 2)} ${formatUnit(unitCodeOrSymbol, dec)}`;
   }
 
   const symbol = unitCodeOrSymbol ? ` ${unitCodeOrSymbol}` : '';
   return `${formatDecimal(dec, maxDecimals)}${symbol}`;
+}
+
+/**
+ * Formats a unit code or symbol for human display:
+ * - 'piece' / 'pza' / 'pieza' / 'piezas': returns 'pieza' if quantity is 1 or -1, otherwise 'piezas'.
+ * - Any other unit code or symbol: returned as-is (e.g. 'g', 'kg', 'ml', 'L').
+ */
+export function formatUnit(
+  unitCodeOrSymbol?: string | null,
+  quantity?: number | string | CostaraDecimal | null
+): string {
+  if (!unitCodeOrSymbol) return '';
+  const unit = unitCodeOrSymbol.toLowerCase().trim();
+  if (unit === 'piece' || unit === 'pza' || unit === 'pieza' || unit === 'piezas') {
+    if (quantity !== null && quantity !== undefined && quantity !== '') {
+      const dec = quantity instanceof CostaraDecimal ? quantity : new CostaraDecimal(String(quantity));
+      if (!dec.isNaN() && (dec.equals(1) || dec.equals(-1))) {
+        return 'pieza';
+      }
+    }
+    return 'piezas';
+  }
+  return unitCodeOrSymbol;
 }
 
 /**
@@ -148,12 +187,32 @@ export function formatPortions(portions: CostaraDecimal | string | number | null
 
 /**
  * Formats a date or ISO string into localized Spanish date (e.g. "18 ago 2026").
+ * If given a date-only string (YYYY-MM-DD), preserves the calendar date without timezone drift.
  */
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return '-';
-  const d = typeof date === 'string' ? new Date(date) : date;
-  if (isNaN(d.getTime())) return '-';
-  return d.toLocaleDateString('es-MX', {
+  if (typeof date === 'string') {
+    const trimmed = date.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, d] = trimmed.split('-').map(Number);
+      const utcDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+      return utcDate.toLocaleDateString('es-MX', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+    }
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('es-MX', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+  if (isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('es-MX', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -163,11 +222,15 @@ export function formatDate(date: string | Date | null | undefined): string {
 /**
  * Formats a date or ISO string into localized date and time (e.g. "18 ago 2026, 14:30").
  */
-export function formatDateTime(date: string | Date | null | undefined): string {
+export function formatDateTime(
+  date: string | Date | null | undefined,
+  timezone?: string | null
+): string {
   if (!date) return '-';
   const d = typeof date === 'string' ? new Date(date) : date;
   if (isNaN(d.getTime())) return '-';
   return d.toLocaleDateString('es-MX', {
+    timeZone: timezone || undefined,
     day: 'numeric',
     month: 'short',
     year: 'numeric',

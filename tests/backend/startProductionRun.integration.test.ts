@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -20,7 +20,7 @@ describe('M2C.0 Backend Integration: Production Execution Foundations & Stock', 
     auth: { storageKey: 'sb-other-test', persistSession: true },
   });
 
-  const bizId = 'a0000000-0000-0000-0000-0000000000ff'; // Panara
+  const bizId = 'b0000000-0000-0000-0000-0000000000c0'; // M2C Test Bakery (isolated from Panara)
 
   let ownerUserId: string;
   let unitGId: string;
@@ -86,6 +86,19 @@ describe('M2C.0 Backend Integration: Production Execution Foundations & Stock', 
       password: 'password123',
     });
     if (errB) throw new Error(`Auth B error: ${errB.message}`);
+
+    // 1b. Ensure dedicated test business and owner membership exist
+    await adminClient.from('businesses').upsert({
+      id: bizId,
+      name: 'M2C Test Bakery',
+      timezone: 'America/Mexico_City',
+      currency_code: 'MXN',
+    });
+    await adminClient.from('business_members').upsert({
+      business_id: bizId,
+      user_id: ownerUserId,
+      role: 'owner',
+    });
 
     // 2. Fetch units
     const { data: units } = await adminClient.from('units').select('id, code');
@@ -714,7 +727,7 @@ describe('M2C.0 Backend Integration: Production Execution Foundations & Stock', 
   // SECTION D: TIMEZONE REGRESSION SUITE (Asia/Tokyo & America/Mexico_City)
   // ==========================================================================
   describe('Timezone Regression Suite (Operational Calendar Date Resolution)', () => {
-    const tokyoBizId = 'c0000000-0000-0000-0000-000000000001';
+    const tokyoBizId = 'b0000000-0000-0000-0000-000000000070';
     const tokyoMatchaItemId = crypto.randomUUID();
     const tokyoFlourItemId = crypto.randomUUID();
     const tokyoRecipeId = crypto.randomUUID();
@@ -1029,28 +1042,48 @@ describe('M2C.0 Backend Integration: Production Execution Foundations & Stock', 
       });
 
       const marsRunId = crypto.randomUUID();
-      const { status, body } = await callStartProductionRun({
-        runId: marsRunId,
-        businessId: invalidBizId,
-        itemId: marsItemId,
-        scheduledDate: '2026-09-15',
-        runScaleTarget: {
-          mode: 'output_pieces',
-          targetPieces: '10',
-        },
-      });
+      try {
+        const { status, body } = await callStartProductionRun({
+          runId: marsRunId,
+          businessId: invalidBizId,
+          itemId: marsItemId,
+          scheduledDate: '2026-09-15',
+          runScaleTarget: {
+            mode: 'output_pieces',
+            targetPieces: '10',
+          },
+        });
 
-      expect(status).toBe(422);
-      expect(body.code).toBe('INVALID_BUSINESS_TIMEZONE');
-      expect(body.message).toContain('Mars/Panara');
+        expect(status).toBe(422);
+        expect(body.code).toBe('INVALID_BUSINESS_TIMEZONE');
+        expect(body.message).toContain('Mars/Panara');
 
-      // Assert NO production run was created
-      const { data: run } = await adminClient
-        .from('production_runs')
-        .select('id')
-        .eq('id', marsRunId)
-        .maybeSingle();
-      expect(run).toBeNull();
+        // Assert NO production run was created
+        const { data: run } = await adminClient
+          .from('production_runs')
+          .select('id')
+          .eq('id', marsRunId)
+          .maybeSingle();
+        expect(run).toBeNull();
+      } finally {
+        await adminClient.from('items').delete().eq('business_id', invalidBizId);
+        await adminClient.from('business_members').delete().eq('business_id', invalidBizId);
+        await adminClient.from('businesses').delete().eq('id', invalidBizId);
+      }
     });
+  });
+
+  afterAll(async () => {
+    const testBizIds = [bizId, 'b0000000-0000-0000-0000-000000000070'];
+    await adminClient.from('production_run_inputs').delete().in('business_id', testBizIds);
+    await adminClient.from('production_runs').delete().in('business_id', testBizIds);
+    await adminClient.from('production_targets').delete().in('business_id', testBizIds);
+    await adminClient.from('production_plans').delete().in('business_id', testBizIds);
+    await adminClient.from('recipe_inputs').delete().in('business_id', testBizIds);
+    await adminClient.from('recipe_versions').delete().in('business_id', testBizIds);
+    await adminClient.from('recipes').delete().in('business_id', testBizIds);
+    await adminClient.from('items').delete().in('business_id', testBizIds);
+    await adminClient.from('business_members').delete().in('business_id', testBizIds);
+    await adminClient.from('businesses').delete().in('id', testBizIds);
   });
 });

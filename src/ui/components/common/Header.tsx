@@ -1,11 +1,22 @@
 import { useAuth } from '../../../context/useAuth.js';
 
 export interface HeaderProps {
+  readonly currentRouteName?: string;
+  readonly onProductionClick?: () => void;
+  readonly onRecipesClick?: () => void;
   readonly onHomeClick?: () => void;
 }
 
-export function Header({ onHomeClick }: HeaderProps) {
+export function Header({
+  currentRouteName,
+  onProductionClick,
+  onRecipesClick,
+  onHomeClick,
+}: HeaderProps) {
   const { user, selectedBusiness, selectedRole, signOut } = useAuth();
+
+  const isProductionActive = currentRouteName === 'production-day' || currentRouteName === 'production-run';
+  const isRecipesActive = currentRouteName?.startsWith('recipe');
 
   const roleLabel: Record<'owner' | 'admin' | 'member', string> = {
     owner: 'Propietario',
@@ -25,8 +36,9 @@ export function Header({ onHomeClick }: HeaderProps) {
         <div className="flex items-center gap-6">
           <button
             type="button"
-            onClick={onHomeClick}
-            className="flex items-center gap-2 cursor-pointer group text-left"
+            onClick={onHomeClick ?? onProductionClick}
+            className="flex items-center gap-2.5 cursor-pointer group text-left min-h-[44px]"
+            title="Ir a Producción"
           >
             <div className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold text-lg shadow-xs group-hover:bg-amber-700 transition-colors">
               C
@@ -35,14 +47,37 @@ export function Header({ onHomeClick }: HeaderProps) {
               <span className="font-bold text-stone-900 tracking-tight text-lg group-hover:text-amber-700 transition-colors">
                 Costara
               </span>
-              <span className="hidden sm:inline-block ml-2 text-xs text-stone-400 font-normal">
-                Costeo y Formulación
-              </span>
             </div>
           </button>
 
+          {/* Main Navigation Links */}
+          <nav className="flex items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={onProductionClick}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors min-h-[44px] cursor-pointer flex items-center ${
+                isProductionActive
+                  ? 'bg-amber-50 text-amber-900 border border-amber-200/80 shadow-xs font-bold'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+              }`}
+            >
+              Producción
+            </button>
+            <button
+              type="button"
+              onClick={onRecipesClick}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors min-h-[44px] cursor-pointer flex items-center ${
+                isRecipesActive
+                  ? 'bg-amber-50 text-amber-900 border border-amber-200/80 shadow-xs font-bold'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+              }`}
+            >
+              Recetas
+            </button>
+          </nav>
+
           {selectedBusiness && (
-            <div className="hidden md:flex items-center gap-2 border-l border-stone-200 pl-6 text-sm text-stone-600">
+            <div className="hidden lg:flex items-center gap-2 border-l border-stone-200 pl-6 text-sm text-stone-600">
               <span className="font-medium text-stone-800">{selectedBusiness.name}</span>
               <span className="text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded-full border border-stone-200">
                 {selectedBusiness.currency_code} · {selectedBusiness.timezone}
@@ -64,7 +99,7 @@ export function Header({ onHomeClick }: HeaderProps) {
           <button
             type="button"
             onClick={() => signOut()}
-            className="text-xs text-stone-500 hover:text-stone-800 font-medium px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 transition-colors cursor-pointer"
+            className="text-xs text-stone-500 hover:text-stone-800 font-medium px-3 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 transition-colors cursor-pointer min-h-[44px] flex items-center"
           >
             Cerrar sesión
           </button>

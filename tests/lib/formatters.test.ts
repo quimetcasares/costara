@@ -7,6 +7,8 @@ import {
   formatMoney,
   formatUnitCost,
   formatPortions,
+  formatUnit,
+  formatQuantity,
 } from '../../src/lib/formatters.js';
 import { CostaraDecimal } from '../../src/domain/calculation/decimal.js';
 
@@ -96,6 +98,78 @@ describe('Formatters Presentation Utilities', () => {
       expect(formatPortions('1')).toBe('1 pieza');
       expect(formatPortions('12.7300')).toBe('12.73 piezas');
       expect(formatPortions(null)).toBe('-');
+    });
+  });
+
+  describe('formatUnit', () => {
+    it('localizes piece unit according to quantity', () => {
+      expect(formatUnit('piece', 1)).toBe('pieza');
+      expect(formatUnit('piece', '1')).toBe('pieza');
+      expect(formatUnit('piece', -1)).toBe('pieza');
+      expect(formatUnit('piece', 8)).toBe('piezas');
+      expect(formatUnit('piece', '4')).toBe('piezas');
+      expect(formatUnit('piece', 0)).toBe('piezas');
+      expect(formatUnit('piece', null)).toBe('piezas');
+      expect(formatUnit('piece', undefined)).toBe('piezas');
+      expect(formatUnit('piece', '')).toBe('piezas');
+      expect(formatUnit('pieza', 1)).toBe('pieza');
+      expect(formatUnit('pza', 2)).toBe('piezas');
+    });
+
+    it('preserves metric and other unit symbols unmodified', () => {
+      expect(formatUnit('g', 500)).toBe('g');
+      expect(formatUnit('kg', 1)).toBe('kg');
+      expect(formatUnit('ml', 250)).toBe('ml');
+      expect(formatUnit('L', 2)).toBe('L');
+      expect(formatUnit('cucharada', 1)).toBe('cucharada');
+      expect(formatUnit(null)).toBe('');
+      expect(formatUnit(undefined)).toBe('');
+    });
+  });
+
+  describe('formatQuantity', () => {
+    it('formats integer quantities without decimals', () => {
+      expect(formatQuantity('500.000000000000')).toBe('500');
+      expect(formatQuantity(500)).toBe('500');
+      expect(formatQuantity(1000)).toBe('1000');
+      expect(formatQuantity(0)).toBe('0');
+      expect(formatQuantity('0.000000000000')).toBe('0');
+      expect(formatQuantity(new CostaraDecimal('8.000000000000'))).toBe('8');
+    });
+
+    it('formats finite decimals up to 3 decimals trimming trailing zeros', () => {
+      expect(formatQuantity('2.500000000000')).toBe('2.5');
+      expect(formatQuantity(2.5)).toBe('2.5');
+      expect(formatQuantity(0.25)).toBe('0.25');
+      expect(formatQuantity('114.500000000000')).toBe('114.5');
+      expect(formatQuantity('22.500000000000')).toBe('22.5');
+      expect(formatQuantity('1.234')).toBe('1.234');
+    });
+
+    it('formats long repeating or irrational decimals to maximum 3 visible decimals', () => {
+      expect(formatQuantity('2571.428571428571')).toBe('2571.429');
+      expect(formatQuantity('1428.571428571429')).toBe('1428.571');
+      expect(formatQuantity(new CostaraDecimal('0.333333333333'))).toBe('0.333');
+      expect(formatQuantity(new CostaraDecimal('0.666666666667'))).toBe('0.667');
+      expect(formatQuantity('0.142857142857')).toBe('0.143');
+    });
+
+    it('handles negative quantities correctly', () => {
+      expect(formatQuantity('-4.500000000000')).toBe('-4.5');
+      expect(formatQuantity(-500)).toBe('-500');
+    });
+
+    it('handles null, undefined, and empty string safely', () => {
+      expect(formatQuantity(null)).toBe('-');
+      expect(formatQuantity(undefined)).toBe('-');
+      expect(formatQuantity('')).toBe('-');
+    });
+
+    it('works seamlessly with formatUnit for piece and metric units', () => {
+      expect(`${formatQuantity(8)} ${formatUnit('piece', 8)}`).toBe('8 piezas');
+      expect(`${formatQuantity(1)} ${formatUnit('piece', 1)}`).toBe('1 pieza');
+      expect(`${formatQuantity('2571.428571428571')} ${formatUnit('g', '2571.428571428571')}`).toBe('2571.429 g');
+      expect(`${formatQuantity('114.500000000000')} ${formatUnit('g', '114.500000000000')}`).toBe('114.5 g');
     });
   });
 });

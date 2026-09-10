@@ -3,15 +3,23 @@
  */
 
 /**
- * Formats a Date object or ISO string to a human-readable date and time.
- * e.g. "15 Jun 2026, 10:00 AM"
+ * Formats a Date object or ISO timestamp string to a human-readable date and time.
+ * If timezone is provided, converts the UTC timestamp into that business timezone.
+ * e.g. "15 jun 2026, 10:00"
  */
-export function formatDateTime(dateOrIso: Date | string | null | undefined): string {
+export function formatDateTime(
+  dateOrIso: Date | string | null | undefined,
+  timezone?: string | null,
+  locale = 'es-MX'
+): string {
   if (!dateOrIso) return '-';
   const d = typeof dateOrIso === 'string' ? new Date(dateOrIso) : dateOrIso;
   if (isNaN(d.getTime())) return '-';
 
-  return d.toLocaleString('es-MX', {
+  const tz = timezone && isValidIanaTimezone(timezone) ? timezone.trim() : undefined;
+
+  return d.toLocaleString(locale, {
+    timeZone: tz,
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -21,15 +29,31 @@ export function formatDateTime(dateOrIso: Date | string | null | undefined): str
 }
 
 /**
- * Formats a Date object or ISO string to a human-readable date.
- * e.g. "15 Jun 2026"
+ * Formats a Date object or string to a human-readable date.
+ * If given a date-only string ('YYYY-MM-DD'), formats it as an operational date
+ * to prevent UTC midnight timezone shifts.
+ * e.g. "15 jun 2026"
  */
-export function formatDate(dateOrIso: Date | string | null | undefined): string {
+export function formatDate(
+  dateOrIso: Date | string | null | undefined,
+  locale = 'es-MX'
+): string {
   if (!dateOrIso) return '-';
-  const d = typeof dateOrIso === 'string' ? new Date(dateOrIso) : dateOrIso;
-  if (isNaN(d.getTime())) return '-';
-
-  return d.toLocaleDateString('es-MX', {
+  if (typeof dateOrIso === 'string') {
+    const trimmed = dateOrIso.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return formatOperationalDate(trimmed, 'short', locale);
+    }
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+  if (isNaN(dateOrIso.getTime())) return '-';
+  return dateOrIso.toLocaleDateString(locale, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -201,4 +225,80 @@ export function formatLocalDateTimeForRpc(input: string): string {
     return `${clean}:00`;
   }
   return clean;
+}
+
+/**
+ * Validates whether a given string is a valid, supported IANA timezone identifier.
+ */
+export function isValidIanaTimezone(timezone?: string | null): boolean {
+  if (!timezone || typeof timezone !== 'string' || timezone.trim() === '') {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: timezone.trim() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns current date 'YYYY-MM-DD' strictly in the business IANA timezone.
+ * Throws an error if timezone is invalid (prohibits silent fallbacks).
+ */
+export function getOperationalToday(timezone: string): string {
+  if (!isValidIanaTimezone(timezone)) {
+    throw new Error(`Zona horaria del negocio inválida o no configurada: "${timezone}"`);
+  }
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone.trim(),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(new Date());
+}
+
+export type OperationalDateFormat = 'long' | 'short';
+
+/**
+ * Formats an operational calendar date 'YYYY-MM-DD' without passing through local midnight.
+ * Treats the date strictly as a calendar date, unaffected by timezone offset:
+ * - 'long': e.g. "Miércoles, 9 de septiembre de 2026"
+ * - 'short': e.g. "9 sep 2026"
+ */
+export function formatOperationalDate(
+  dateStr: string | null | undefined,
+  format: OperationalDateFormat = 'long',
+  locale = 'es-MX'
+): string {
+  if (!dateStr) return '';
+  const match = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return dateStr;
+  const y = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const d = parseInt(match[3], 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return dateStr;
+
+  // Safe calendar representation: noon UTC evaluated strictly with timeZone: 'UTC'
+  // guarantees the exact calendar date (y, m, d) is preserved across all timezones.
+  const utcDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+
+  const options: Intl.DateTimeFormatOptions =
+    format === 'short'
+      ? { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }
+      : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' };
+
+  const formatted = new Intl.DateTimeFormat(locale, options).format(utcDate);
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+}
+
+/**
+ * Adds or subtracts N days from a calendar date 'YYYY-MM-DD' returning 'YYYY-MM-DD'.
+ */
+export function addDaysToDateStr(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }

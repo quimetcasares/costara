@@ -3,6 +3,8 @@ import { useAuth } from './context/useAuth.js';
 import { supabase } from './lib/supabaseClient.js';
 import { Header } from './ui/components/common/Header.js';
 import { useNavigation } from './ui/hooks/useNavigation.js';
+import { ProductionDayView } from './ui/views/ProductionDayView.js';
+import { ProductionRunView } from './ui/views/ProductionRunView.js';
 import { RecipeListView } from './ui/views/RecipeListView.js';
 import { RecipeDetailView } from './ui/views/RecipeDetailView.js';
 import { RecipeDraftEditorView } from './ui/views/RecipeDraftEditorView.js';
@@ -10,7 +12,7 @@ import { RecipeHistoryView } from './ui/views/RecipeHistoryView.js';
 
 export default function App() {
   const { user, selectedBusiness, selectedRole, loading, error: authError, signIn } = useAuth();
-  const { route, toList, toDetail, toDraft, toHistory } = useNavigation();
+  const { route, toProductionDay, toProductionRun, toList, toDetail, toDraft, toHistory } = useNavigation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -58,7 +60,7 @@ export default function App() {
               C
             </div>
             <h1 className="text-2xl font-black tracking-tight text-white">Costara</h1>
-            <p className="text-xs text-stone-400">Vertical Slice M1D: Recetas, Costeo y Versionado</p>
+            <p className="text-xs text-stone-400">Producción, Recetas y Costeo</p>
           </div>
 
           {(localError || authError) && (
@@ -130,13 +132,41 @@ export default function App() {
 
   const businessId = selectedBusiness.id;
   const userRole = selectedRole || 'member';
-  const businessTimezone = selectedBusiness.timezone || 'America/Mexico_City';
+  const businessTimezone = selectedBusiness.timezone;
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900 flex flex-col font-sans">
-      <Header onHomeClick={toList} />
+      <Header
+        currentRouteName={route.name}
+        onProductionClick={() => toProductionDay()}
+        onRecipesClick={toList}
+        onHomeClick={() => toProductionDay()}
+      />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {route.name === 'production-day' && (
+          <ProductionDayView
+            supabase={supabase}
+            businessId={businessId}
+            businessTimezone={businessTimezone}
+            dateParam={route.date}
+            onSelectRun={(id) => toProductionRun(id)}
+            onDateChange={(date) => toProductionDay(date)}
+          />
+        )}
+
+        {route.name === 'production-run' && (
+          <ProductionRunView
+            supabase={supabase}
+            businessId={businessId}
+            businessTimezone={businessTimezone}
+            runId={route.runId}
+            onBack={(scheduledDate) => toProductionDay(scheduledDate)}
+            onComplete={(scheduledDate) => toProductionDay(scheduledDate)}
+            onCancel={(scheduledDate) => toProductionDay(scheduledDate)}
+          />
+        )}
+
         {route.name === 'recipe-list' && (
           <RecipeListView
             supabase={supabase}
@@ -151,7 +181,7 @@ export default function App() {
             businessId={businessId}
             recipeId={route.recipeId}
             userRole={userRole}
-            businessTimezone={businessTimezone}
+            businessTimezone={businessTimezone || 'America/Mexico_City'}
             onBack={toList}
             onGoToDraft={() => toDraft(route.recipeId)}
             onGoToHistory={() => toHistory(route.recipeId)}
@@ -163,7 +193,7 @@ export default function App() {
             supabase={supabase}
             businessId={businessId}
             recipeId={route.recipeId}
-            businessTimezone={businessTimezone}
+            businessTimezone={businessTimezone || 'America/Mexico_City'}
             onBack={() => toDetail(route.recipeId)}
             onPublished={() => toDetail(route.recipeId)}
           />
@@ -186,10 +216,10 @@ export default function App() {
             </p>
             <button
               type="button"
-              onClick={toList}
+              onClick={() => toProductionDay()}
               className="text-xs font-semibold px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors cursor-pointer"
             >
-              Volver al catálogo de recetas
+              Volver a producción
             </button>
           </div>
         )}
